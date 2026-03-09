@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>8-bit Craft: Infinite</title>
+    <title>8-bit Craft: Infinite Dimensions</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; user-select: none; }
         #crosshair { position: fixed; top: 50%; left: 50%; width: 16px; height: 16px; border: 2px solid white; transform: translate(-50%, -50%); mix-blend-mode: difference; display: none; z-index: 10; }
@@ -10,31 +10,26 @@
         #hotbar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; background: rgba(0,0,0,0.8); padding: 6px; border-radius: 4px; z-index: 20; }
         .slot { width: 44px; height: 44px; border: 2px solid #555; background: #333; display: flex; align-items: center; justify-content: center; color: white; border-radius: 4px; font-size: 10px; background-size: cover; image-rendering: pixelated; position: relative; }
         .slot.active { border-color: #00ff00; transform: scale(1.1); box-shadow: 0 0 10px rgba(0,255,0,0.5); }
-        #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: white; background: rgba(0,0,0,0.5); font-size: 24px; cursor: pointer; z-index: 100; }
-        #inventory { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.85); padding: 20px; border-radius: 8px; display: none; grid-template-columns: repeat(5, 1fr); gap: 10px; z-index: 200; border: 2px solid #fff; }
-        .inv-slot { width: 44px; height: 44px; border: 2px solid #666; background: #333; cursor: pointer; background-size: cover; image-rendering: pixelated; position: relative; }
-        #inv-tabs { grid-column: span 5; display: flex; gap: 8px; margin-bottom: 10px; }
-        #inv-tabs button { padding: 6px 10px; background: #222; color: white; border: 1px solid #888; cursor: pointer; }
+        #inventory { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.9); padding: 20px; border-radius: 8px; display: none; grid-template-columns: repeat(5, 1fr); gap: 10px; z-index: 200; border: 2px solid #fff; width: 300px; }
+        #inv-tabs { grid-column: span 5; display: flex; gap: 5px; margin-bottom: 10px; }
+        #inv-tabs button { background: #444; color: white; border: none; padding: 5px; cursor: pointer; font-size: 10px; flex: 1; }
         #inv-tabs button.active { background: #00aa00; }
-        #inv-content { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
-        #hotbar-wrapper { position: fixed; bottom: 20px; left: 50%; width: 500px; transform: translateX(-50%); }
-        #hp-container { position: absolute; bottom: 80px; left: 0; width: 100%; height: 15px; background: #220000; border: 2px solid #aa0000; border-radius: 100px; overflow: hidden; }
-        #hp-bar { height: 100%; width: 100%; background: linear-gradient(to right, #ff0000, #ff8800); transition: width 0.2s; }
+        #inv-content { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+        #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: white; background: rgba(0,0,0,0.5); font-size: 24px; cursor: pointer; z-index: 100; }
+        #hp-container { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); width: 200px; height: 10px; background: #200; border: 1px solid #f00; border-radius: 5px; overflow: hidden; }
+        #hp-bar { height: 100%; width: 100%; background: #f00; transition: width 0.2s; }
     </style>
 </head>
 <body>
-    <div id="ui">E:インベントリ | WASD:移動 | /:破壊 \:設置 | K/L:Save/Load</div>
+    <div id="ui">E:インベントリ | WASD:移動 | /:破壊 \:設置 | 落下で次元移動</div>
     <div id="crosshair"></div>
-    <div id="hotbar-wrapper">
-        <div id="hp-container"><div id="hp-bar"></div></div>
-        <div id="hotbar"></div>
-    </div>
+    <div id="hp-container"><div id="hp-bar"></div></div>
+    <div id="hotbar"></div>
     <div id="inventory">
         <div id="inv-tabs">
-            <button data-tab="自然">自然</button>
+            <button data-tab="自然" class="active">自然</button>
             <button data-tab="建築">建築</button>
             <button data-tab="芋">芋</button>
-            <button data-tab="items">Items</button>
         </div>
         <div id="inv-content"></div>
     </div>
@@ -45,7 +40,7 @@
     <!-- 地形生成Worker -->
     <script id="worker-script" type="text/javascript">
         self.onmessage = function(e) {
-            const { cx, cz, dimension, SCALE, SEA_LEVEL, MAG_LEVEL, seed, biomeSeed } = e.data;
+            const { cx, cz, dimension, SCALE, SEA_LEVEL, seed } = e.data;
             const CHUNK_SIZE = 16;
             const blocks = [];
 
@@ -53,62 +48,21 @@
                 for (let z = 0; z < CHUNK_SIZE; z++) {
                     const wx = cx * CHUNK_SIZE + x;
                     const wz = cz * CHUNK_SIZE + z;
-                    const px = wx * SCALE;
-                    const pz = wz * SCALE;
+                    const px = wx * SCALE, pz = wz * SCALE;
 
-                    if (dimension === 0) { // Overworld (元の地形ロジック)
-                        let hBase = Math.sin(wx * 0.05 + seed) * Math.cos(wz * 0.05 + seed) * 3;
-                        let bMix = (Math.sin(wx * 0.1 + biomeSeed) + Math.cos(wz * 0.1 + biomeSeed)) / 2;
-                        let mountainSizeMod = (Math.sin(wx * 0.03 + seed) + 1) * 0.5;
-                        let hRaw = hBase;
-                        let stonePower = 0;
-
-                        if (bMix > 0.5) {
-                            let t = (bMix - 0.5) / 0.3;
-                            let curve = Math.pow(Math.max(0, t), 1.5);
-                            let maxHeight = 4 + (mountainSizeMod * 2);
-                            let rugged = (Math.sin(wx * 0.4 + seed) * 1.2 + Math.cos(wz * 0.35 + biomeSeed) * 1.2 + Math.sin((wx+wz)*0.7 + seed*0.5) * 0.6);
-                            hRaw += (curve * maxHeight) + (curve * rugged);
-                            stonePower = t;
-                        } else if (bMix < -0.5) {
-                            let t = Math.min(1, (Math.abs(bMix) - 0.5) / 0.2);
-                            hRaw *= (1 - t * 0.8);
-                        }
-
-                        let h = Math.round(hRaw);
+                    if (dimension === 0) { // Overworld
+                        let h = Math.round(Math.sin(wx*0.1+seed)*2 + Math.cos(wz*0.1+seed)*2);
                         const surfaceY = h * SCALE;
-                        for (let y = -8 * SCALE; y <= Math.max(surfaceY, SEA_LEVEL); y += SCALE) {
-                            let bid = 0;
-                            if (y <= surfaceY) {
-                                if (stonePower > 1.5) bid = 10;
-                                else if (stonePower > 0.15) bid = 3;
-                                else if (y < surfaceY - 2 * SCALE) bid = 3;
-                                else if (y < surfaceY) bid = 2;
-                                else bid = (y <= SEA_LEVEL) ? 7 : 1;
-                            } else if (y <= SEA_LEVEL) bid = 6;
-                            if (bid !== 0) blocks.push({ pos: `${px},${y},${pz}`, id: bid });
+                        for (let y = -5 * SCALE; y <= Math.max(surfaceY, SEA_LEVEL); y += SCALE) {
+                            let bid = (y <= surfaceY) ? (y < surfaceY - SCALE*2 ? 3 : (y < surfaceY ? 2 : (y<=SEA_LEVEL?7:1))) : 6;
+                            blocks.push({ px, py: y, pz, id: bid });
                         }
-
-                        // 元の木生成
-                        if (Math.random() > 0.985 && surfaceY > SEA_LEVEL && stonePower < 0.15) {
-                            const trunkH = 3 + Math.floor(Math.random()*2);
-                            for(let ty=1; ty<=trunkH; ty++) blocks.push({ pos: `${px},${surfaceY+ty*SCALE},${pz}`, id: 4 });
-                            for(let ly=-1; ly<=1; ly++) for(let lx=-1; lx<=1; lx++) for(let lz=-1; lz<=1; lz++) {
-                                if(ly===1 && (lx!==0 || lz!==0)) continue;
-                                blocks.push({ pos: `${px+lx*SCALE},${surfaceY+(trunkH+ly)*SCALE},${pz+lz*SCALE}`, id: 5 });
-                            }
-                        }
-                    } else { // 芋世界
-                        let hBase = 3 + Math.sin(wx * 0.05 + seed) * Math.cos(wz * 0.05 + seed) * 4;
-                        let h = Math.round(hBase + (Math.sin(wx * 0.15 + seed) + Math.cos(wz * 0.15 + seed)) * 0.8);
+                    } else { // Satumoworld
+                        let h = Math.round(Math.sin(wx*0.05+seed)*3 + 4);
                         const surfaceY = h * SCALE;
-                        for (let y = -5 * SCALE; y <= Math.max(surfaceY, MAG_LEVEL); y += SCALE) {
-                            let bid = 0;
-                            if (y <= surfaceY) {
-                                if (y === surfaceY) bid = (y < MAG_LEVEL - SCALE) ? 13 : 15;
-                                else bid = (y < MAG_LEVEL && y > surfaceY - 2*SCALE) ? 13 : 3;
-                            } else if (y <= MAG_LEVEL) bid = 21;
-                            if (bid !== 0) blocks.push({ pos: `${px},${y},${pz}`, id: bid });
+                        for (let y = -3 * SCALE; y <= surfaceY; y += SCALE) {
+                            let bid = (y === surfaceY) ? 15 : 13;
+                            blocks.push({ px, py: y, pz, id: bid });
                         }
                     }
                 }
@@ -118,211 +72,207 @@
     </script>
 
     <script>
-        const SCALE = 4;
-        const CHUNK_SIZE = 16;
-        const VIEW_DISTANCE = 4;
-        const PLAYER_HEIGHT = SCALE * 1.8;
-        const SEA_LEVEL = -1 * SCALE;
-        const MAG_LEVEL = 1 * SCALE;
-        const MAX_HP = 20;
-        const PHYSICS = { gravity: SCALE*0.005, jumpForce: SCALE*0.15, moveSpeed: SCALE*0.1, stepHeight: SCALE*0.7 };
+        const SCALE = 4, CHUNK_SIZE = 16, VIEW_DISTANCE = 2, MAX_HP = 20;
+        const PHYSICS = { gravity: 0.02, jumpForce: 0.5, moveSpeed: 0.35, stepHeight: 2.8 };
         
-        let worldData = new Map(), loadedChunks = new Set();
-        let scene, camera, renderer, sunLight, instances = {}, needsUpdate = false;
-        let isPlaying = false, isInvOpen = false, selectedSlot = 0, currentDimension = 0;
-        let keys = {}, yVel = 0, playerHP = 20, lastDamageTime = 0;
-        let seed = Math.random() * 1000, biomeSeed = Math.random() * 1000;
-
-        const allPossibleIds = [1,2,3,4,5,6,7,8,10,12,13,15,16,17,18,19,20,21];
-        const faceMap = [{x:16,y:8,rot:1},{x:0,y:8,rot:3},{x:8,y:8,rot:0},{x:24,y:8,rot:0},{x:8,y:16,rot:0},{x:8,y:0,rot:2}];
+        let scene, camera, renderer, instances = {}, worldData = new Map(), loadedChunks = new Map();
+        let isPlaying = false, isInvOpen = false, currentDimension = 0, selectedSlot = 0;
+        let playerHP = 20, keys = {}, yVel = 0, currentInvTab = "自然";
+        
+        const ITEM_DEFS = {
+            1: { tab: "自然", name: "草" }, 2: { tab: "自然", name: "土" }, 3: { tab: "自然", name: "石" },
+            4: { tab: "自然", name: "木" }, 5: { tab: "自然", name: "葉" }, 6: { tab: "自然", name: "水" },
+            7: { tab: "自然", name: "砂" }, 13: { tab: "芋", name: "赤土" }, 15: { tab: "芋", name: "赤草" },
+            17: { tab: "建築", name: "板材" }, 18: { tab: "建築", name: "光" }
+        };
+        const inventoryCounts = {}; Object.keys(ITEM_DEFS).forEach(id => inventoryCounts[id] = 64);
+        let hotbarItems = [1, 2, 3, 4, 17, 7, 6, 18, 15, 13];
 
         const blob = new Blob([document.getElementById('worker-script').textContent], { type: 'text/javascript' });
         const worker = new Worker(URL.createObjectURL(blob));
         worker.onmessage = (e) => {
-            e.data.blocks.forEach(b => worldData.set(b.pos, b.id));
-            loadedChunks.add(`${e.data.cx},${e.data.cz}`);
-            needsUpdate = true;
+            const key = `${e.data.cx},${e.data.cz}`;
+            loadedChunks.set(key, e.data.blocks);
+            e.data.blocks.forEach(b => worldData.set(`${b.px},${b.py},${b.pz}`, b.id));
+            updateInstances();
         };
 
         function init() {
             scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 500);
             camera.rotation.order = 'YXZ';
-            camera.position.set(0, 40, 0);
-
             renderer = new THREE.WebGLRenderer({ antialias: false });
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
 
-            scene.add(new THREE.AmbientLight(0xffffff, 0.4));
-            sunLight = new THREE.DirectionalLight(0xffffff, 0.7);
-            sunLight.position.set(50, 100, 50);
-            scene.add(sunLight);
-
             const loader = new THREE.TextureLoader();
-            let loadedCount = 0;
-            allPossibleIds.forEach(id => {
+            Object.keys(ITEM_DEFS).forEach(id => {
                 loader.load(`texture/${id}/${id}.png`, (tex) => {
                     tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
-                    const mat = new THREE.MeshLambertMaterial({ map: tex, transparent: (id===6||id===21||id===5), opacity: (id===6?0.7:1), alphaTest: (id===5?0.1:0) });
+                    const mat = new THREE.MeshLambertMaterial({ map: tex, transparent: (id=="6"||id=="5"), opacity: (id=="6"?0.7:1) });
                     const geo = new THREE.BoxGeometry(SCALE, SCALE, SCALE);
-                    
-                    // --- 元のUV計算ロジックを完全復元 ---
+                    // UVトリミング
                     const uv = geo.attributes.uv;
-                    const TW = tex.image.width, TH = tex.image.height, m = 0.01;
+                    const faceMap = [{x:16,y:8,rot:1},{x:0,y:8,rot:3},{x:8,y:8,rot:0},{x:24,y:8,rot:0},{x:8,y:16,rot:0},{x:8,y:0,rot:2}];
                     faceMap.forEach((f, i) => {
-                        let c = [{u:(f.x+m)/TW, v:(TH-f.y-m)/TH}, {u:(f.x+8-m)/TW, v:(TH-f.y-m)/TH}, {u:(f.x+m)/TW, v:(TH-(f.y+8)+m)/TH}, {u:(f.x+8-m)/TW, v:(TH-(f.y+8)+m)/TH}];
+                        let c = [{u:(f.x+0.01)/32, v:(32-f.y-0.01)/32}, {u:(f.x+7.99)/32, v:(32-f.y-0.01)/32}, {u:(f.x+0.01)/32, v:(32-f.y-7.99)/32}, {u:(f.x+7.99)/32, v:(32-f.y-7.99)/32}];
                         if (f.rot === 1) c = [c[2],c[0],c[3],c[1]];
-                        if (f.rot === 2) c = [c[3],c[2],c[1],c[0]];
-                        if (f.rot === 3) c = [c[1],c[3],c[0],c[2]];
                         uv.setXY(i*4+0,c[0].u,c[0].v); uv.setXY(i*4+1,c[1].u,c[1].v); uv.setXY(i*4+2,c[2].u,c[2].v); uv.setXY(i*4+3,c[3].u,c[3].v);
                     });
-                    
-                    instances[id] = new THREE.InstancedMesh(geo, mat, 50000);
-                    instances[id].frustumCulled = false;
+                    instances[id] = new THREE.InstancedMesh(geo, mat, 10000);
                     scene.add(instances[id]);
-                    if (++loadedCount === allPossibleIds.length) {
-                        updateHPBar(); updateHotbar(); animate();
-                    }
                 });
             });
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            updateDimensionStyle();
             setupControls();
+            animate();
         }
 
-        function checkCollision(px, py, pz) {
-            const snap = (v) => Math.round(v / SCALE) * SCALE;
-            const b = py - PLAYER_HEIGHT/2, t = py + PLAYER_HEIGHT/2;
-            for(let ox of [-0.3, 0.3]) for(let oz of [-0.3, 0.3]) {
-                const bx = snap(px + ox*SCALE), bz = snap(pz + oz*SCALE);
-                for(let by = snap(b); by <= snap(t); by += SCALE) {
-                    const id = worldData.get(`${bx},${by},${bz}`);
-                    if (id && id !== 6 && id !== 21) return true;
-                }
-            }
-            return false;
+        function updateDimensionStyle() {
+            const sky = currentDimension === 0 ? 0x87ceeb : 0x441111;
+            scene.background = new THREE.Color(sky);
+            scene.fog = new THREE.FogExp2(sky, 0.01);
         }
 
-        function updateChunks() {
-            const cx = Math.floor(camera.position.x / (CHUNK_SIZE * SCALE));
-            const cz = Math.floor(camera.position.z / (CHUNK_SIZE * SCALE));
-            for (let x = -VIEW_DISTANCE; x <= VIEW_DISTANCE; x++) {
-                for (let z = -VIEW_DISTANCE; z <= VIEW_DISTANCE; z++) {
-                    const nx = cx + x, nz = cz + z;
-                    if (!loadedChunks.has(`${nx},${nz}`)) {
-                        worker.postMessage({ cx: nx, cz: nz, dimension: currentDimension, SCALE, SEA_LEVEL, MAG_LEVEL, seed, biomeSeed });
-                    }
-                }
-            }
-            for (const key of loadedChunks) {
-                const [ax, az] = key.split(',').map(Number);
-                if (Math.abs(ax - cx) > VIEW_DISTANCE + 1 || Math.abs(az - cz) > VIEW_DISTANCE + 1) {
-                    const startX = ax * CHUNK_SIZE * SCALE, startZ = az * CHUNK_SIZE * SCALE;
-                    for (let [pos] of worldData) {
-                        const [px, , pz] = pos.split(',').map(Number);
-                        if (px >= startX && px < startX + CHUNK_SIZE*SCALE && pz >= startZ && pz < startZ + CHUNK_SIZE*SCALE) worldData.delete(pos);
-                    }
-                    loadedChunks.delete(key); needsUpdate = true;
-                }
-            }
+        function switchDimension() {
+            currentDimension = currentDimension === 0 ? 1 : 0;
+            worldData.clear(); loadedChunks.clear();
+            camera.position.set(0, 50, 0); yVel = 0;
+            updateDimensionStyle();
         }
 
         function updateInstances() {
             const dummy = new THREE.Object3D();
-            const counts = {}; allPossibleIds.forEach(id => counts[id] = 0);
-            worldData.forEach((id, pos) => {
-                if (!instances[id]) return;
-                const [x, y, z] = pos.split(',').map(Number);
-                if (Math.hypot(x - camera.position.x, z - camera.position.z) > VIEW_DISTANCE * CHUNK_SIZE * SCALE) return;
-                dummy.position.set(x, y, z); dummy.updateMatrix();
-                instances[id].setMatrixAt(counts[id]++, dummy.matrix);
-            });
-            allPossibleIds.forEach(id => { if (instances[id]) { instances[id].count = counts[id]; instances[id].instanceMatrix.needsUpdate = true; }});
-            needsUpdate = false;
+            const counts = {}; Object.keys(instances).forEach(id => counts[id] = 0);
+            const cx = Math.floor(camera.position.x/(CHUNK_SIZE*SCALE)), cz = Math.floor(camera.position.z/(CHUNK_SIZE*SCALE));
+
+            for (let x = -VIEW_DISTANCE; x <= VIEW_DISTANCE; x++) {
+                for (let z = -VIEW_DISTANCE; z <= VIEW_DISTANCE; z++) {
+                    const blocks = loadedChunks.get(`${cx+x},${cz+z}`);
+                    if (blocks) blocks.forEach(b => {
+                        if (!instances[b.id]) return;
+                        dummy.position.set(b.px, b.py, b.pz); dummy.updateMatrix();
+                        instances[b.id].setMatrixAt(counts[b.id]++, dummy.matrix);
+                    });
+                }
+            }
+            Object.keys(instances).forEach(id => { instances[id].count = counts[id]; instances[id].instanceMatrix.needsUpdate = true; });
         }
 
         function animate() {
             requestAnimationFrame(animate);
             if (isPlaying && !isInvOpen) {
-                updateChunks();
-                if (needsUpdate) updateInstances();
+                // 落下判定
+                if (camera.position.y < -80) switchDimension();
+
+                const cx = Math.floor(camera.position.x/(CHUNK_SIZE*SCALE)), cz = Math.floor(camera.position.z/(CHUNK_SIZE*SCALE));
+                for(let x=-VIEW_DISTANCE; x<=VIEW_DISTANCE; x++) for(let z=-VIEW_DISTANCE; z<=VIEW_DISTANCE; z++) {
+                    const key = `${cx+x},${cz+z}`;
+                    if(!loadedChunks.has(key)) { loadedChunks.set(key, []); worker.postMessage({cx:cx+x, cz:cz+z, dimension:currentDimension, SCALE, SEA_LEVEL:-SCALE, seed:123}); }
+                }
 
                 const move = new THREE.Vector3();
                 const dir = new THREE.Vector3(); camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
                 const side = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), dir).normalize();
-                if (keys.w) move.add(dir); if (keys.s) move.sub(dir);
-                if (keys.a) move.add(side); if (keys.d) move.sub(side);
+                if(keys.w) move.add(dir); if(keys.s) move.sub(dir); if(keys.a) move.add(side); if(keys.d) move.sub(side);
                 
                 if (move.length() > 0) {
                     const nextX = camera.position.x + move.normalize().x * PHYSICS.moveSpeed;
                     const nextZ = camera.position.z + move.z * PHYSICS.moveSpeed;
-                    
-                    // --- 元のオートステップロジック ---
-                    const tryMove = (nx, nz) => {
-                        if (!checkCollision(nx, camera.position.y, nz)) {
-                            camera.position.x = nx; camera.position.z = nz; return true;
-                        }
-                        for (let dy = 0.1*SCALE; dy <= PHYSICS.stepHeight; dy += 0.1*SCALE) {
-                            if (!checkCollision(nx, camera.position.y + dy, nz)) {
-                                camera.position.y += dy; camera.position.x = nx; camera.position.z = nz; return true;
-                            }
+                    const check = (x, y, z) => {
+                        const snap = v => Math.round(v/SCALE)*SCALE;
+                        for(let ox of [-0.3, 0.3]) for(let oz of [-0.3, 0.3]) {
+                            const id = worldData.get(`${snap(x+ox*SCALE)},${snap(y)},${snap(z+oz*SCALE)}`);
+                            if(id && id !== 6) return true;
                         }
                         return false;
                     };
-                    tryMove(nextX, nextZ);
+                    if(!check(nextX, camera.position.y, nextZ)) { camera.position.x = nextX; camera.position.z = nextZ; }
+                    else if(!check(nextX, camera.position.y + PHYSICS.stepHeight, nextZ)) { camera.position.y += 0.2; camera.position.x = nextX; camera.position.z = nextZ; }
                 }
 
                 yVel -= PHYSICS.gravity;
-                let nextY = camera.position.y + yVel;
-                if (checkCollision(camera.position.x, nextY, camera.position.z)) {
-                    if (yVel < 0 && keys[' ']) yVel = PHYSICS.jumpForce;
-                    else yVel = 0;
-                } else { camera.position.y = nextY; }
-
-                // ダメージ処理
-                const foot = worldData.get(`${Math.round(camera.position.x/SCALE)*SCALE},${Math.round((camera.position.y-SCALE*1.5)/SCALE)*SCALE},${Math.round(camera.position.z/SCALE)*SCALE}`);
-                if (foot === 21 && Date.now() - lastDamageTime > 500) { playerHP -= 1; updateHPBar(); lastDamageTime = Date.now(); }
+                camera.position.y += yVel;
+                const snap = v => Math.round(v/SCALE)*SCALE;
+                if(worldData.get(`${snap(camera.position.x)},${snap(camera.position.y-SCALE*1.5)},${snap(camera.position.z)}`) && yVel < 0) {
+                    yVel = keys[' '] ? PHYSICS.jumpForce : 0;
+                }
             }
             renderer.render(scene, camera);
         }
 
-        function updateHPBar() { document.getElementById("hp-bar").style.width = (playerHP/MAX_HP*100) + "%"; }
+        function toggleInventory() {
+            isInvOpen = !isInvOpen;
+            document.getElementById('inventory').style.display = isInvOpen ? 'grid' : 'none';
+            if(isInvOpen) { document.exitPointerLock(); renderInventory(); } 
+            else { document.body.requestPointerLock(); }
+        }
+
+        function renderInventory() {
+            const content = document.getElementById('inv-content'); content.innerHTML = '';
+            Object.keys(ITEM_DEFS).forEach(id => {
+                if(ITEM_DEFS[id].tab !== currentInvTab || inventoryCounts[id] <= 0) return;
+                const div = document.createElement('div'); div.className = 'inv-slot';
+                div.style.backgroundImage = `url('texture/${id}/${id}.png')`;
+                div.onclick = () => { hotbarItems[selectedSlot] = parseInt(id); updateHotbar(); toggleInventory(); };
+                content.appendChild(div);
+            });
+        }
+
         function updateHotbar() {
             const hb = document.getElementById('hotbar'); hb.innerHTML = '';
-            [1,2,3,4,5,7,6,18,21,null].forEach((id, i) => {
+            hotbarItems.forEach((id, i) => {
                 const s = document.createElement('div'); s.className = 'slot' + (selectedSlot === i ? ' active' : '');
-                if (id) s.style.backgroundImage = `url('texture/${id}/${id}.png')`;
+                if(id) s.style.backgroundImage = `url('texture/${id}/${id}.png')`;
                 hb.appendChild(s);
             });
         }
 
         function setupControls() {
-            document.addEventListener('mousedown', e => { if(!isPlaying) document.body.requestPointerLock(); else handleAction(e.button === 0 ? 'destroy' : 'place'); });
+            document.getElementById('overlay').onclick = () => document.body.requestPointerLock();
             document.addEventListener('pointerlockchange', () => { isPlaying = !!document.pointerLockElement; document.getElementById('overlay').style.display = isPlaying ? 'none' : 'flex'; document.getElementById('crosshair').style.display = isPlaying ? 'block' : 'none'; });
-            window.onkeydown = e => { if(e.key === 'e') toggleInventory(); if(isInvOpen) return; keys[e.key.toLowerCase()] = true; if(e.key === ' ') keys[' '] = true; const idx = ['1','2','3','4','5','6','7','8','9','0'].indexOf(e.key); if(idx !== -1) { selectedSlot = idx; updateHotbar(); }};
+            window.onkeydown = e => {
+                if(e.key === 'e') toggleInventory();
+                if(isInvOpen) return;
+                keys[e.key.toLowerCase()] = true; if(e.key === ' ') keys[' '] = true;
+                const idx = ['1','2','3','4','5','6','7','8','9','0'].indexOf(e.key);
+                if(idx !== -1) { selectedSlot = idx; updateHotbar(); }
+            };
             window.onkeyup = e => { keys[e.key.toLowerCase()] = false; if(e.key === ' ') keys[' '] = false; };
-            window.onmousemove = e => { if(isPlaying) { camera.rotation.y -= e.movementX * 0.002; camera.rotation.x = Math.max(-1.5, Math.min(1.5, camera.rotation.x - e.movementY * 0.002)); }};
+            window.onmousemove = e => { if(isPlaying && !isInvOpen) { camera.rotation.y -= e.movementX * 0.002; camera.rotation.x = Math.max(-1.5, Math.min(1.5, camera.rotation.x - e.movementY * 0.002)); }};
+            document.querySelectorAll('#inv-tabs button').forEach(btn => btn.onclick = () => {
+                document.querySelectorAll('#inv-tabs button').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active'); currentInvTab = btn.dataset.tab; renderInventory();
+            });
+            document.onmousedown = e => { if(isPlaying && !isInvOpen) handleAction(e.button === 0 ? 'destroy' : 'place'); };
         }
 
         function handleAction(type) {
             const ray = new THREE.Raycaster(); ray.setFromCamera(new THREE.Vector2(0,0), camera);
             const hits = ray.intersectObjects(Object.values(instances));
-            if (hits.length > 0 && hits[0].distance < SCALE * 10) {
+            if(hits.length > 0 && hits[0].distance < SCALE*10) {
                 const hit = hits[0]; const p = hit.point.clone(); const n = hit.face.normal.clone();
-                if (type === 'destroy') {
-                    p.sub(n.multiplyScalar(SCALE*0.5));
-                    worldData.delete(`${Math.round(p.x/SCALE)*SCALE},${Math.round(p.y/SCALE)*SCALE},${Math.round(p.z/SCALE)*SCALE}`);
+                const snap = v => Math.round(v/SCALE)*SCALE;
+                if(type === 'destroy') {
+                    p.sub(n.multiplyScalar(SCALE*0.5)); const key = `${snap(p.x)},${snap(p.y)},${snap(p.z)}`;
+                    const id = worldData.get(key); if(id) { inventoryCounts[id]++; worldData.delete(key); }
+                    for(let b of loadedChunks.values()) { const i = b.findIndex(v => `${v.px},${v.py},${v.pz}` === key); if(i!==-1) b.splice(i,1); }
                 } else {
-                    p.add(n.multiplyScalar(SCALE*0.5));
-                    const id = [1,2,3,4,5,7,6,18,21,null][selectedSlot];
-                    if (id) worldData.set(`${Math.round(p.x/SCALE)*SCALE},${Math.round(p.y/SCALE)*SCALE},${Math.round(p.z/SCALE)*SCALE}`, id);
+                    p.add(n.multiplyScalar(SCALE*0.5)); const id = hotbarItems[selectedSlot];
+                    if(id && inventoryCounts[id] > 0) {
+                        const b = { px:snap(p.x), py:snap(p.y), pz:snap(p.z), id };
+                        worldData.set(`${b.px},${b.py},${b.pz}`, id); inventoryCounts[id]--;
+                        const chunkKey = `${Math.floor(b.px/(CHUNK_SIZE*SCALE))},${Math.floor(b.pz/(CHUNK_SIZE*SCALE))}`;
+                        if(loadedChunks.has(chunkKey)) loadedChunks.get(chunkKey).push(b);
+                    }
                 }
-                needsUpdate = true;
+                updateInstances();
             }
         }
 
-        function toggleInventory() { isInvOpen = !isInvOpen; document.getElementById('inventory').style.display = isInvOpen ? 'grid' : 'none'; if (!isInvOpen) document.body.requestPointerLock(); else document.exitPointerLock(); }
-
-        window.onload = init;
+        window.onload = () => { init(); updateHotbar(); };
     </script>
 </body>
 </html>
