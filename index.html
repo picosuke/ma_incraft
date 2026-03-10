@@ -1,278 +1,1538 @@
 <!DOCTYPE html>
 <html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <title>8-bit Craft: Infinite Dimensions</title>
-    <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; user-select: none; }
-        #crosshair { position: fixed; top: 50%; left: 50%; width: 16px; height: 16px; border: 2px solid white; transform: translate(-50%, -50%); mix-blend-mode: difference; display: none; z-index: 10; }
-        #ui { position: fixed; top: 10px; left: 10px; color: white; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 5px; font-size: 12px; pointer-events: none; z-index: 10; }
-        #hotbar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; background: rgba(0,0,0,0.8); padding: 6px; border-radius: 4px; z-index: 20; }
-        .slot { width: 44px; height: 44px; border: 2px solid #555; background: #333; display: flex; align-items: center; justify-content: center; color: white; border-radius: 4px; font-size: 10px; background-size: cover; image-rendering: pixelated; position: relative; }
-        .slot.active { border-color: #00ff00; transform: scale(1.1); box-shadow: 0 0 10px rgba(0,255,0,0.5); }
-        #inventory { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.9); padding: 20px; border-radius: 8px; display: none; grid-template-columns: repeat(5, 1fr); gap: 10px; z-index: 200; border: 2px solid #fff; width: 300px; }
-        #inv-tabs { grid-column: span 5; display: flex; gap: 5px; margin-bottom: 10px; }
-        #inv-tabs button { background: #444; color: white; border: none; padding: 5px; cursor: pointer; font-size: 10px; flex: 1; }
-        #inv-tabs button.active { background: #00aa00; }
-        #inv-content { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
-        #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: white; background: rgba(0,0,0,0.5); font-size: 24px; cursor: pointer; z-index: 100; }
-        #hp-container { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); width: 200px; height: 10px; background: #200; border: 1px solid #f00; border-radius: 5px; overflow: hidden; }
-        #hp-bar { height: 100%; width: 100%; background: #f00; transition: width 0.2s; }
-    </style>
-</head>
-<body>
-    <div id="ui">E:インベントリ | WASD:移動 | /:破壊 \:設置 | 落下で次元移動</div>
+    <head>
+        <meta charset="UTF-8">
+        <title>8-bit Craft</title>
+        <style>
+            body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; user-select: none; }
+            #crosshair { position: fixed; top: 50%; left: 50%; width: 16px; height: 16px; border: 2px solid white; transform: translate(-50%, -50%); mix-blend-mode: difference; display: none; z-index: 10; }
+            #ui { position: fixed; top: 10px; left: 10px; color: white; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 5px; font-size: 12px; pointer-events: none; z-index: 10; }
+            #hotbar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; background: rgba(0,0,0,0.8); padding: 6px; border-radius: 4px; z-index: 20; }
+            .slot { width: 44px; height: 44px; border: 2px solid #555; background: #333; display: flex; align-items: center; justify-content: center; color: white; border-radius: 4px; font-size: 10px; background-size: cover; image-rendering: pixelated; position: relative; }
+            .slot.active { border-color: #00ff00; transform: scale(1.1); box-shadow: 0 0 10px rgba(0,255,0,0.5); }
+            .slot::after { content: attr(data-key); position: absolute; top: 2px; left: 2px; font-size: 8px; color: #aaa; }
+            #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: white; background: rgba(0,0,0,0.5); font-size: 24px; cursor: pointer; z-index: 100; }
+            #inventory { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.85); padding: 20px; border-radius: 8px; display: none; grid-template-columns: repeat(5, 1fr); gap: 10px; z-index: 200; border: 2px solid #fff; }
+.inv-slot {
+    width: 44px;
+    height: 44px;
+    border: 2px solid #666;
+    background: #333;             /* アイコンの床 */
+    cursor: pointer;
+    background-size: cover;
+    image-rendering: pixelated;
+    position: relative;           /* 数字を絶対配置するため */
+}
+
+.inv-slot span.count {
+    position: absolute;           /* ここで右下固定 */
+    bottom: 2px;
+    right: 2px;
+    font-size: 10px;
+    color: white;
+    background: rgba(0,0,0,0.7);
+    padding: 1px 3px;
+    border-radius: 2px;
+    pointer-events: none;
+}
+
+.inv-slot:hover {
+    border-color: #fff;
+    background: #555;
+}
+
+#inv-tabs {
+    grid-column: span 5;
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+#inv-tabs button {
+    padding: 6px 10px;
+    background: #222;
+    color: white;
+    border: 1px solid #888;
+    cursor: pointer;
+}
+
+#inv-tabs button.active {
+    background: #00aa00;
+}
+
+#inv-content {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+}
+
+#hotbar-wrapper {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    width: 500px;
+    transform: translateX(-50%);
+}
+
+#hp-container {
+    position: absolute;
+    bottom: 80px;
+    left: 0;
+    width: 100%;
+    height: 15px;
+    background: #220000;
+    border: 2px solid #aa0000;
+    border-radius: 100px;
+    overflow: hidden;
+}
+
+#hp-bar {
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(to right, #ff0000, #ff8800);
+    transition: width 0.2s;
+}
+
+        </style>
+    </head>
+    <body>
+    <div id="ui">E:インベントリ | M:次元切替 | 矢印キー:視点 | WASD:移動 | /:破壊 \:設置</div>
     <div id="crosshair"></div>
-    <div id="hp-container"><div id="hp-bar"></div></div>
-    <div id="hotbar"></div>
-    <div id="inventory">
-        <div id="inv-tabs">
-            <button data-tab="自然" class="active">自然</button>
-            <button data-tab="建築">建築</button>
-            <button data-tab="芋">芋</button>
-        </div>
-        <div id="inv-content"></div>
+<div id="hotbar-wrapper">
+    <div id="hp-container">
+        <div id="hp-bar"></div>
     </div>
+
+    <div id="hotbar"></div>
+</div>
+<div id="inventory">
+    <div id="inv-tabs">
+        <button data-tab="自然">自然</button>
+        <button data-tab="建築">建築</button>
+        <button data-tab="芋">芋</button>
+        <button data-tab="items">Items</button>
+    </div>
+    <div id="inv-content"></div>
+</div>
     <div id="overlay">START</div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
-    <!-- 地形生成Worker -->
-    <script id="worker-script" type="text/javascript">
-        self.onmessage = function(e) {
-            const { cx, cz, dimension, SCALE, SEA_LEVEL, seed } = e.data;
-            const CHUNK_SIZE = 16;
-            const blocks = [];
-
-            for (let x = 0; x < CHUNK_SIZE; x++) {
-                for (let z = 0; z < CHUNK_SIZE; z++) {
-                    const wx = cx * CHUNK_SIZE + x;
-                    const wz = cz * CHUNK_SIZE + z;
-                    const px = wx * SCALE, pz = wz * SCALE;
-
-                    if (dimension === 0) { // Overworld
-                        let h = Math.round(Math.sin(wx*0.1+seed)*2 + Math.cos(wz*0.1+seed)*2);
-                        const surfaceY = h * SCALE;
-                        for (let y = -5 * SCALE; y <= Math.max(surfaceY, SEA_LEVEL); y += SCALE) {
-                            let bid = (y <= surfaceY) ? (y < surfaceY - SCALE*2 ? 3 : (y < surfaceY ? 2 : (y<=SEA_LEVEL?7:1))) : 6;
-                            blocks.push({ px, py: y, pz, id: bid });
-                        }
-                    } else { // Satumoworld
-                        let h = Math.round(Math.sin(wx*0.05+seed)*3 + 4);
-                        const surfaceY = h * SCALE;
-                        for (let y = -3 * SCALE; y <= surfaceY; y += SCALE) {
-                            let bid = (y === surfaceY) ? 15 : 13;
-                            blocks.push({ px, py: y, pz, id: bid });
-                        }
-                    }
-                }
-            }
-            self.postMessage({ cx, cz, blocks });
-        };
-    </script>
-
     <script>
-        const SCALE = 4, CHUNK_SIZE = 16, VIEW_DISTANCE = 2, MAX_HP = 20;
-        const PHYSICS = { gravity: 0.02, jumpForce: 0.5, moveSpeed: 0.35, stepHeight: 2.8 };
+
+    const SCALE = 4;
+
+    // ===== 無限ワールド設定 =====
+    const CHUNK_SIZE = 16;
+    const VIEW_DISTANCE = 3;
+    const generatedChunks = new Set();
         
-        let scene, camera, renderer, instances = {}, worldData = new Map(), loadedChunks = new Map();
-        let isPlaying = false, isInvOpen = false, currentDimension = 0, selectedSlot = 0;
-        let playerHP = 20, keys = {}, yVel = 0, currentInvTab = "自然";
+    const PLAYER_HEIGHT = SCALE * 1.8;
+    const SEA_LEVEL = -1 * SCALE;
+    const MAG_LEVEL = 1 * SCALE;
+    const PHYSICS = { gravity: SCALE*0.005, jumpForce: SCALE*0.15, moveSpeed: SCALE*0.1, turnSpeed: SCALE*0.015 };
+    const MAX_HP = 20;
+    let playerHP = 20;
+    let lastDamageTime = 0;
+
+    const snap = (v) => Math.round(v / SCALE) * SCALE;
+
+// === 全ID一覧（描画・Raycast・Inventory共通） ===
+const allPossibleIds = [
+    0,
+    1, 2, 3, 4, 5, 6, 7, 8, 9,
+    10, 11, 12, 13, 15, 16, 17, 18,
+    19, 20, 21,
+    "-1","-2",
+    1017,1117, 1020,1120, /* 必要ならもっと追加 */
+];
+
+// === アイテム・ブロック定義 ===
+const ITEM_DEFS = {
+    0: { type: "block", tab: "自然", placeable: true , name: "test" },
+    1: { type: "block", tab: "自然", placeable: true , name: "草" },
+    2: { type: "block", tab: "自然", placeable: true , name: "土" },
+    3: { type: "block", tab: "自然", placeable: true , name: "石" },
+    4: { type: "block", tab: "自然", placeable: true , name: "木" },
+    5: { type: "block", tab: "自然", placeable: true , name: "葉っぱ" },
+    6: { type: "block", tab: "自然", placeable: true , name: "水" },
+    7: { type: "block", tab: "自然", placeable: true , name: "砂" },
+    8: { type: "block", tab: "自然", placeable: true , name: "なめらかな石" },
+    9: { type: "block", tab: "自然", placeable: true , name: "泥" },
+    10: { type: "block", tab: "自然", placeable: true , name: "ざらざらな石" },
+    11: { type: "block", tab: "自然", placeable: true , name: "苔入りの石" },
+    12: { type: "block", tab: "芋", placeable: true , name: "赤葉" },
+    13: { type: "block", tab: "芋", placeable: true , name: "赤土" },
+    15: { type: "block", tab: "芋", placeable: true , name: "赤草" },
+    16: { type: "block", tab: "芋", placeable: true , name: "石木" },
+    17: { type: "block", tab: "建築", placeable: true , name: "木の板材" },
+    18: { type: "block", tab: "建築", placeable: true, name: "光源ブロック",
+            light: { color: 0xfff2aa, intensity: 0.5, distance: SCALE * 19 }
+        },
+    19: { type: "block", tab: "建築", placeable: true , name: "模様入りの木の板材" },
+    20: { type: "block", tab: "建築", placeable: true , name: "苔入りの木の板材" },
+    21: { type: "block", tab: "自然", placeable: true, name: "マグマ",
+            damage: 1, damageInterval: 500,// ms
+        },
+
+
+    1017: { type: "block", tab: "建築", placeable: true, name: "土ハーフ（下）", baseId: 17, IDhalf: "bottom", isHalf: true },
+    1117: { type: "block", tab: "建築", placeable: true, name: "土ハーフ（上）", baseId: 17, half: "top", isHalf: true },
+    1020: { type: "block", tab: "建築", placeable: true, name: "石ハーフ（下）", baseId: 20, half: "bottom", isHalf: true },
+    1120: { type: "block", tab: "建築", placeable: true, name: "石ハーフ（上）", baseId: 20, half: "top", isHalf: true },
+
+    "-1": { type: "item", tab: "items", placeable: false, name: "heart", consumable: true },
+            /* consumable: true 消費する（デフォルトなので省略可）*/
+    "-2": { type: "item", tab: "items", placeable: false, name: "無限の剣", consumable: false },
+            /* consumable: false  消費しない  また onUse: () => { 攻撃処理... }*/
+};
+
+// アイテムごとの所持数を管理
+const inventoryCounts = {
+    "-2": 64,
+    "-1": 64,
+    1: 64,
+    2: 64,
+    3: 64,
+    4: 64,
+    5: 64,
+    6: 64,
+    7: 64,
+    8: 64,
+    12: 64,
+    13: 64,
+    15: 64,
+    16: 64,
+    17: 64,
+    18: 64,
+    19: 64,
+    20: 64,
+    21: 64,
+    1017: 64,
+    1117: 64,
+    1020: 64,
+    1120: 64,
+};
+
+function getItemCount(id) {
+    return inventoryCounts[id] || 0;
+}
+
+let currentInvTab = "自然";
+
+    const hotbarItems = [1, 2, 3, 4, 5, 7, 6, 8, null, null];
+    const slotKeys = ['1','2','3','4','5','6','7','8','9','0'];
+
+let scene, camera, renderer,
+    worldMaps = [
+        { blocks: new Map(), lights: new Map() }, // 次元0
+        { blocks: new Map(), lights: new Map() }  // 次元1
+    ],
+    instances = {};
+
+
+let worldData = worldMaps[0].blocks;
+let lightMap  = worldMaps[0].lights;
+
+    let sunLight;
+    let isPlaying = false, selectedSlot = 0, keys = {}, yVel = 0;
+    let isInvOpen = false, gameStarted = false, currentDimension = 0;
+
+    // ディメンションごとの環境設定
+    const styles = [
+        { name: "Overworld", sky: 0x87ceeb, fog: 0x87ceeb, fogDens: 5, range: 30, sun: 0xffffff },
+        { name: "Satumoworld", sky: 0xef8889, fog: 0xffffff, fogDens: 20, range: 30, sun: 0xffaa00 }
+    ];
+
+    const faceMap = [{ x: 16, y: 8, rot: 1 }, { x: 0, y: 8, rot: 3 }, { x: 8, y: 8, rot: 0 }, { x: 24, y: 8, rot: 0 }, { x: 8, y: 16, rot: 0 }, { x: 8, y: 0, rot: 2 }];
+    const FACE_DATA = [
+        { dir: [1, 0, 0], type: 'side', corners: [ [1,1,1], [1,0,1], [1,1,0], [1,0,0] ] },
+        { dir: [-1, 0, 0], type: 'side', corners: [ [0,1,0], [0,0,0], [0,1,1], [0,0,1] ] },
+        { dir: [0, 1, 0], type: 'top', corners: [ [0,1,0], [1,1,0], [0,1,1], [1,1,1] ] },
+        { dir: [0, -1, 0], type: 'side', corners: [ [0,0,1], [1,0,1], [0,0,0], [1,0,0] ] },
+        { dir: [0, 0, 1], type: 'side', corners: [ [1,1,1], [1,0,1], [0,1,1], [0,0,1] ] },
+        { dir: [0, 0, -1], type: 'side', corners: [ [0,1,0], [0,0,0], [1,1,0], [1,0,0] ] },
+    ];
+
+document.querySelectorAll("#inv-tabs button").forEach(btn => {
+    btn.onclick = () => setInventoryTab(btn.dataset.tab);
+});
+
+    function updateHPBar() {
+        const percent = Math.max(0, playerHP) / MAX_HP * 100;
+        const bar = document.getElementById("hp-bar");
+    
+        if (percent <= 0) {
+            bar.style.width = "0%";
+        } else {
+            bar.style.width = percent + "%";
+        }
+    }
+
+    function init() {
+        scene = new THREE.Scene();
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 2000);
+        camera.rotation.order = 'YXZ';
+
+        renderer = new THREE.WebGLRenderer({ antialias: false });
+        renderer.setSize(window.innerWidth, window.innerHeight);
         
-        const ITEM_DEFS = {
-            1: { tab: "自然", name: "草" }, 2: { tab: "自然", name: "土" }, 3: { tab: "自然", name: "石" },
-            4: { tab: "自然", name: "木" }, 5: { tab: "自然", name: "葉" }, 6: { tab: "自然", name: "水" },
-            7: { tab: "自然", name: "砂" }, 13: { tab: "芋", name: "赤土" }, 15: { tab: "芋", name: "赤草" },
-            17: { tab: "建築", name: "板材" }, 18: { tab: "建築", name: "光" }
-        };
-        const inventoryCounts = {}; Object.keys(ITEM_DEFS).forEach(id => inventoryCounts[id] = 64);
-        let hotbarItems = [1, 2, 3, 4, 17, 7, 6, 18, 15, 13];
+        // 影の設定を有効化
+        renderer.shadowMap.enabled = false;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        
+        document.body.appendChild(renderer.domElement);
+        
+        // 環境光（少し暗くして影を際立たせる）
+        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
 
-        const blob = new Blob([document.getElementById('worker-script').textContent], { type: 'text/javascript' });
-        const worker = new Worker(URL.createObjectURL(blob));
-        worker.onmessage = (e) => {
-            const key = `${e.data.cx},${e.data.cz}`;
-            loadedChunks.set(key, e.data.blocks);
-            e.data.blocks.forEach(b => worldData.set(`${b.px},${b.py},${b.pz}`, b.id));
-            updateInstances();
-        };
+        // 太陽光（影を落とすライト）
+        sunLight = new THREE.DirectionalLight(0xffffff, 0.7);
+        sunLight.position.set(50, 60, 50);
+        sunLight.castShadow = true;
+        
+        sunLight.shadow.bias = -0.0001;  // 影のずれを防ぐ
+        sunLight.shadow.normalBias = 0.05;
+        
+        // 影の描画範囲（広すぎるとボケ、狭すぎると影が切れます）
+        sunLight.shadow.mapSize.width = 2048;
+        sunLight.shadow.mapSize.height = 2048;
+        const d = 150; 
+        sunLight.shadow.camera.left = -d;
+        sunLight.shadow.camera.right = d;
+        sunLight.shadow.camera.top = d;
+        sunLight.shadow.camera.bottom = -d;
+        scene.add(sunLight);
 
-        function init() {
-            scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 500);
-            camera.rotation.order = 'YXZ';
-            renderer = new THREE.WebGLRenderer({ antialias: false });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            document.body.appendChild(renderer.domElement);
+        // --- ここで loader を定義 ---
+        const loader = new THREE.TextureLoader();
+        let loadedCount = 0;
+        allPossibleIds.forEach(rawId => {
+            const id = Number(rawId);  // 文字列のIDを数値に変換（"-1" → -1 など）
 
-            const loader = new THREE.TextureLoader();
-            Object.keys(ITEM_DEFS).forEach(id => {
-                loader.load(`texture/${id}/${id}.png`, (tex) => {
-                    tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
-                    const mat = new THREE.MeshLambertMaterial({ map: tex, transparent: (id=="6"||id=="5"), opacity: (id=="6"?0.7:1) });
-                    const geo = new THREE.BoxGeometry(SCALE, SCALE, SCALE);
-                    // UVトリミング
-                    const uv = geo.attributes.uv;
-                    const faceMap = [{x:16,y:8,rot:1},{x:0,y:8,rot:3},{x:8,y:8,rot:0},{x:24,y:8,rot:0},{x:8,y:16,rot:0},{x:8,y:0,rot:2}];
-                    faceMap.forEach((f, i) => {
-                        let c = [{u:(f.x+0.01)/32, v:(32-f.y-0.01)/32}, {u:(f.x+7.99)/32, v:(32-f.y-0.01)/32}, {u:(f.x+0.01)/32, v:(32-f.y-7.99)/32}, {u:(f.x+7.99)/32, v:(32-f.y-7.99)/32}];
-                        if (f.rot === 1) c = [c[2],c[0],c[3],c[1]];
-                        uv.setXY(i*4+0,c[0].u,c[0].v); uv.setXY(i*4+1,c[1].u,c[1].v); uv.setXY(i*4+2,c[2].u,c[2].v); uv.setXY(i*4+3,c[3].u,c[3].v);
+            // ハーフブロックなら元のフルブロックのテクスチャを使う
+            const textureId = ITEM_DEFS[id]?.isHalf ? ITEM_DEFS[id].baseId : id;
+
+            // テクスチャ読み込み（非同期）
+            loader.load(`texture/${textureId}/${textureId}.png`, (tex) => {
+                // ──────────────── テクスチャが読み込めたら ────────────────
+
+                // テクスチャが無効なら警告してスキップ
+                if (!tex.image || !tex.image.width) {
+                    console.warn("invalid texture for ID:", id, "(using base:", textureId, ")");
+                    return;
+                }
+
+                // ピクセルアート用フィルタ（ぼやけない）
+                tex.magFilter = THREE.NearestFilter;
+                tex.minFilter = THREE.NearestFilter;
+
+                // 水・葉っぱ・マグマは特殊マテリアル
+                const isLeaf   = (textureId === 5 || textureId === 12);
+                const isWater  = (textureId === 6);
+                const isMagma  = (textureId === 21);
+
+                let mat;
+                if (isWater || isMagma) {
+                    mat = new THREE.MeshLambertMaterial({
+                        map: tex,
+                        transparent: true,
+                        opacity: isWater ? 0.8 : 0.9,
+                        side: THREE.DoubleSide,
+                        depthWrite: false
                     });
-                    instances[id] = new THREE.InstancedMesh(geo, mat, 10000);
-                    scene.add(instances[id]);
-                });
-            });
-
-            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-            updateDimensionStyle();
-            setupControls();
-            animate();
-        }
-
-        function updateDimensionStyle() {
-            const sky = currentDimension === 0 ? 0x87ceeb : 0x441111;
-            scene.background = new THREE.Color(sky);
-            scene.fog = new THREE.FogExp2(sky, 0.01);
-        }
-
-        function switchDimension() {
-            currentDimension = currentDimension === 0 ? 1 : 0;
-            worldData.clear(); loadedChunks.clear();
-            camera.position.set(0, 50, 0); yVel = 0;
-            updateDimensionStyle();
-        }
-
-        function updateInstances() {
-            const dummy = new THREE.Object3D();
-            const counts = {}; Object.keys(instances).forEach(id => counts[id] = 0);
-            const cx = Math.floor(camera.position.x/(CHUNK_SIZE*SCALE)), cz = Math.floor(camera.position.z/(CHUNK_SIZE*SCALE));
-
-            for (let x = -VIEW_DISTANCE; x <= VIEW_DISTANCE; x++) {
-                for (let z = -VIEW_DISTANCE; z <= VIEW_DISTANCE; z++) {
-                    const blocks = loadedChunks.get(`${cx+x},${cz+z}`);
-                    if (blocks) blocks.forEach(b => {
-                        if (!instances[b.id]) return;
-                        dummy.position.set(b.px, b.py, b.pz); dummy.updateMatrix();
-                        instances[b.id].setMatrixAt(counts[b.id]++, dummy.matrix);
+                } else if (isLeaf) {
+                    mat = new THREE.MeshLambertMaterial({
+                        map: tex,
+                        transparent: true,
+                        alphaTest: 0.1,
+                        side: THREE.DoubleSide,
                     });
-                }
-            }
-            Object.keys(instances).forEach(id => { instances[id].count = counts[id]; instances[id].instanceMatrix.needsUpdate = true; });
-        }
-
-        function animate() {
-            requestAnimationFrame(animate);
-            if (isPlaying && !isInvOpen) {
-                // 落下判定
-                if (camera.position.y < -80) switchDimension();
-
-                const cx = Math.floor(camera.position.x/(CHUNK_SIZE*SCALE)), cz = Math.floor(camera.position.z/(CHUNK_SIZE*SCALE));
-                for(let x=-VIEW_DISTANCE; x<=VIEW_DISTANCE; x++) for(let z=-VIEW_DISTANCE; z<=VIEW_DISTANCE; z++) {
-                    const key = `${cx+x},${cz+z}`;
-                    if(!loadedChunks.has(key)) { loadedChunks.set(key, []); worker.postMessage({cx:cx+x, cz:cz+z, dimension:currentDimension, SCALE, SEA_LEVEL:-SCALE, seed:123}); }
-                }
-
-                const move = new THREE.Vector3();
-                const dir = new THREE.Vector3(); camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
-                const side = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), dir).normalize();
-                if(keys.w) move.add(dir); if(keys.s) move.sub(dir); if(keys.a) move.add(side); if(keys.d) move.sub(side);
-                
-                if (move.length() > 0) {
-                    const nextX = camera.position.x + move.normalize().x * PHYSICS.moveSpeed;
-                    const nextZ = camera.position.z + move.z * PHYSICS.moveSpeed;
-                    const check = (x, y, z) => {
-                        const snap = v => Math.round(v/SCALE)*SCALE;
-                        for(let ox of [-0.3, 0.3]) for(let oz of [-0.3, 0.3]) {
-                            const id = worldData.get(`${snap(x+ox*SCALE)},${snap(y)},${snap(z+oz*SCALE)}`);
-                            if(id && id !== 6) return true;
-                        }
-                        return false;
-                    };
-                    if(!check(nextX, camera.position.y, nextZ)) { camera.position.x = nextX; camera.position.z = nextZ; }
-                    else if(!check(nextX, camera.position.y + PHYSICS.stepHeight, nextZ)) { camera.position.y += 0.2; camera.position.x = nextX; camera.position.z = nextZ; }
-                }
-
-                yVel -= PHYSICS.gravity;
-                camera.position.y += yVel;
-                const snap = v => Math.round(v/SCALE)*SCALE;
-                if(worldData.get(`${snap(camera.position.x)},${snap(camera.position.y-SCALE*1.5)},${snap(camera.position.z)}`) && yVel < 0) {
-                    yVel = keys[' '] ? PHYSICS.jumpForce : 0;
-                }
-            }
-            renderer.render(scene, camera);
-        }
-
-        function toggleInventory() {
-            isInvOpen = !isInvOpen;
-            document.getElementById('inventory').style.display = isInvOpen ? 'grid' : 'none';
-            if(isInvOpen) { document.exitPointerLock(); renderInventory(); } 
-            else { document.body.requestPointerLock(); }
-        }
-
-        function renderInventory() {
-            const content = document.getElementById('inv-content'); content.innerHTML = '';
-            Object.keys(ITEM_DEFS).forEach(id => {
-                if(ITEM_DEFS[id].tab !== currentInvTab || inventoryCounts[id] <= 0) return;
-                const div = document.createElement('div'); div.className = 'inv-slot';
-                div.style.backgroundImage = `url('texture/${id}/${id}.png')`;
-                div.onclick = () => { hotbarItems[selectedSlot] = parseInt(id); updateHotbar(); toggleInventory(); };
-                content.appendChild(div);
-            });
-        }
-
-        function updateHotbar() {
-            const hb = document.getElementById('hotbar'); hb.innerHTML = '';
-            hotbarItems.forEach((id, i) => {
-                const s = document.createElement('div'); s.className = 'slot' + (selectedSlot === i ? ' active' : '');
-                if(id) s.style.backgroundImage = `url('texture/${id}/${id}.png')`;
-                hb.appendChild(s);
-            });
-        }
-
-        function setupControls() {
-            document.getElementById('overlay').onclick = () => document.body.requestPointerLock();
-            document.addEventListener('pointerlockchange', () => { isPlaying = !!document.pointerLockElement; document.getElementById('overlay').style.display = isPlaying ? 'none' : 'flex'; document.getElementById('crosshair').style.display = isPlaying ? 'block' : 'none'; });
-            window.onkeydown = e => {
-                if(e.key === 'e') toggleInventory();
-                if(isInvOpen) return;
-                keys[e.key.toLowerCase()] = true; if(e.key === ' ') keys[' '] = true;
-                const idx = ['1','2','3','4','5','6','7','8','9','0'].indexOf(e.key);
-                if(idx !== -1) { selectedSlot = idx; updateHotbar(); }
-            };
-            window.onkeyup = e => { keys[e.key.toLowerCase()] = false; if(e.key === ' ') keys[' '] = false; };
-            window.onmousemove = e => { if(isPlaying && !isInvOpen) { camera.rotation.y -= e.movementX * 0.002; camera.rotation.x = Math.max(-1.5, Math.min(1.5, camera.rotation.x - e.movementY * 0.002)); }};
-            document.querySelectorAll('#inv-tabs button').forEach(btn => btn.onclick = () => {
-                document.querySelectorAll('#inv-tabs button').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active'); currentInvTab = btn.dataset.tab; renderInventory();
-            });
-            document.onmousedown = e => { if(isPlaying && !isInvOpen) handleAction(e.button === 0 ? 'destroy' : 'place'); };
-        }
-
-        function handleAction(type) {
-            const ray = new THREE.Raycaster(); ray.setFromCamera(new THREE.Vector2(0,0), camera);
-            const hits = ray.intersectObjects(Object.values(instances));
-            if(hits.length > 0 && hits[0].distance < SCALE*10) {
-                const hit = hits[0]; const p = hit.point.clone(); const n = hit.face.normal.clone();
-                const snap = v => Math.round(v/SCALE)*SCALE;
-                if(type === 'destroy') {
-                    p.sub(n.multiplyScalar(SCALE*0.5)); const key = `${snap(p.x)},${snap(p.y)},${snap(p.z)}`;
-                    const id = worldData.get(key); if(id) { inventoryCounts[id]++; worldData.delete(key); }
-                    for(let b of loadedChunks.values()) { const i = b.findIndex(v => `${v.px},${v.py},${v.pz}` === key); if(i!==-1) b.splice(i,1); }
                 } else {
-                    p.add(n.multiplyScalar(SCALE*0.5)); const id = hotbarItems[selectedSlot];
-                    if(id && inventoryCounts[id] > 0) {
-                        const b = { px:snap(p.x), py:snap(p.y), pz:snap(p.z), id };
-                        worldData.set(`${b.px},${b.py},${b.pz}`, id); inventoryCounts[id]--;
-                        const chunkKey = `${Math.floor(b.px/(CHUNK_SIZE*SCALE))},${Math.floor(b.pz/(CHUNK_SIZE*SCALE))}`;
-                        if(loadedChunks.has(chunkKey)) loadedChunks.get(chunkKey).push(b);
+                    mat = new THREE.MeshLambertMaterial({ map: tex });
+                }
+
+                // ── ここが大事：ジオメトリとUV設定 ──
+                let geo;
+
+                if (ITEM_DEFS[id]?.isHalf) {
+                    // ハーフブロック → 高さ半分
+                    geo = new THREE.BoxGeometry(SCALE, SCALE * 0.5, SCALE);
+
+                    // 上下位置調整（中心をブロックの底に合わせる）
+                    if (ITEM_DEFS[id].half === "top") {
+                        geo.translate(0, SCALE * 0.25, 0);
+                    } else {
+                        geo.translate(0, -SCALE * 0.25, 0);
+                    }
+                } else {
+                    // フルブロック
+                    geo = new THREE.BoxGeometry(SCALE, SCALE, SCALE);
+                }
+
+                // faceMapを使って各面に正しいテクスチャ座標を設定（回転対応）
+                const uv = geo.attributes.uv;
+                const TW = tex.image.width;
+                const TH = tex.image.height;
+                const m = 0.01;
+                
+                faceMap.forEach((f, i) => {
+                
+                    const isHalf = ITEM_DEFS[id]?.isHalf;
+                    const isTop  = ITEM_DEFS[id]?.half === "top";
+                    const isSide = [0,1,4,5].includes(i);
+                
+                    let px = f.x;
+                    let py = f.y;
+                    let w = 8;
+                    let h = 8;
+                
+                    // ===== ハーフブロックのトリミング =====
+                    if (isHalf && isSide) {
+                        const dir = FACE_DATA[i].dir;
+                        const inverted = (dir[0] < 0 || dir[2] < 0);
+                        const useTop = inverted ? !isTop : isTop;
+                        const rotated = (f.rot === 1 || f.rot === 3);
+                        if (rotated) {
+                            w = 4;
+                            if (!useTop) px += 4;
+                        } else {
+                            h = 4;
+                            if (!useTop) py += 4;
+                        }
+                    }
+                
+                    // ===== UV生成（回転前）=====
+                    let c = [
+                        {u:(px+m)/TW,       v:(TH-py-m)/TH},
+                        {u:(px+w-m)/TW,     v:(TH-py-m)/TH},
+                        {u:(px+m)/TW,       v:(TH-(py+h)+m)/TH},
+                        {u:(px+w-m)/TW,     v:(TH-(py+h)+m)/TH}
+                    ];
+                
+                    // ===== 最後に回転 =====
+                    if (f.rot === 1) c = [c[2],c[0],c[3],c[1]];
+                    if (f.rot === 2) c = [c[3],c[2],c[1],c[0]];
+                    if (f.rot === 3) c = [c[1],c[3],c[0],c[2]];
+                
+                    uv.setXY(i*4+0,c[0].u,c[0].v);
+                    uv.setXY(i*4+1,c[1].u,c[1].v);
+                    uv.setXY(i*4+2,c[2].u,c[2].v);
+                    uv.setXY(i*4+3,c[3].u,c[3].v);
+                });
+                
+                uv.needsUpdate = true;
+                // InstancedMeshを作成（大量配置用で高速）
+                instances[id] = new THREE.InstancedMesh(geo, mat, 55000);
+                instances[id].castShadow = true;
+                instances[id].receiveShadow = true;
+
+                if (id === 18) {
+                    instances[id].castShadow = false;
+                    instances[id].receiveShadow = false;
+                }
+
+                scene.add(instances[id]);
+
+                if (++loadedCount === allPossibleIds.length) {
+                    generateWorld();
+                }
+            });
+        });
+
+        setupControls();
+        updateHotbar();
+        animate();
+        updateHPBar()
+    }
+
+function switchDimension(dimIdx) {
+    // ★ 追加：前の全ライトをシーンから削除（ディメンション切り替え時専用）
+    worldMaps[currentDimension].lights.forEach(light => scene.remove(light));
+    worldMaps[currentDimension].lights.clear();
+
+    currentDimension = dimIdx;
+    worldData = worldMaps[dimIdx].blocks;
+    lightMap = worldMaps[dimIdx].lights;
+
+    if (worldData.size === 0) {
+        generateWorld(); 
+    }
+
+    const s = styles[currentDimension];
+    scene.background = new THREE.Color(s.sky);
+    scene.fog = new THREE.FogExp2(s.fog, s.fogDens / 1000);
+    if (sunLight) sunLight.color.setHex(s.sun);
+
+    updateInstances();  // これで rebuildLights() も呼ばれる
+}
+
+    function generateWorld() {
+        generatedChunks.clear();
+        const s = styles[currentDimension];
+        worldData = worldMaps[currentDimension].blocks;
+        if (worldData.size === 0) {
+            const range = s.range;
+            scene.background = new THREE.Color(s.sky);
+            scene.fog = new THREE.FogExp2(s.fog, s.fogDens / 1000);
+
+            // 【追加】ディメンションに合わせて太陽の色を変更
+            if(sunLight) sunLight.color.setHex(s.sun);
+
+            worldData.clear();
+            const seed = Math.random() * 1000;
+            const biomeSeed = Math.random() * 1000;
+
+            for(let x = -range; x <= range; x++) {
+                for(let z = -range; z <= range; z++) {
+                    const px = x * SCALE, pz = z * SCALE;
+
+                    if (currentDimension === 1) {
+
+                        let hBase = 3 + Math.sin(x * 0.05 + seed) * Math.cos(z * 0.05 + seed) * 4;
+                        hBase += (Math.sin(x * 0.15 + seed) + Math.cos(z * 0.15 + seed)) * 0.8;
+
+                        let h = Math.round(hBase);
+                        const surfaceY = h * SCALE;
+
+                        // 地層生成
+                        for (let y = -5 * SCALE; y <= Math.max(surfaceY, MAG_LEVEL); y += SCALE) {
+                            let blockId = 0;
+
+                            if (y <= surfaceY) {
+                                if (y === surfaceY) {
+                                    if (y < MAG_LEVEL - (1 * SCALE)) {
+                                        blockId = 13;
+                                    } else if (y <= MAG_LEVEL - 4 + SCALE) {
+                                        blockId = 13;
+                                    } else {
+                                        blockId = 15;
+                                    }
+                                } else {
+                                    if (y < MAG_LEVEL && y > surfaceY - (2 * SCALE)) {
+                                        blockId = 13;
+                                    } else {
+                                        blockId = 3;
+                                    }
+                                }
+                            } else if (y <= MAG_LEVEL) {
+                                blockId = 21;
+                            }
+
+                            if (blockId !== 0) worldData.set(`${px},${y},${pz}`, blockId);
+                        }
+                        
+
+                        // ===== 次元1 超高木（高さ比例・枝あり・縦葉）=====
+                        const currentSurfaceId = worldData.get(`${px},${surfaceY},${pz}`);
+                        if (
+                            currentDimension === 1 &&
+                            currentSurfaceId === 15 &&
+                            surfaceY > MAG_LEVEL &&
+                            Math.random() > 0.98
+                        ) {
+                        
+                            // ★ 高さを大きく
+                            const treeHeight = 12 + Math.floor(Math.random() * 6); // 12〜17
+                        
+                            const leafStart = Math.floor(treeHeight * 0.35);
+                            const leafEnd   = Math.floor(treeHeight * 1.15);
+                        
+                            // ===== 幹（2×2）=====
+                            for (let ty = 1; ty <= treeHeight; ty++) {
+                                for (let tx = 0; tx < 2; tx++) {
+                                    for (let tz = 0; tz < 2; tz++) {
+                                        const x = px + tx * SCALE;
+                                        const y = surfaceY + ty * SCALE;
+                                        const z = pz + tz * SCALE;
+                        
+                                        if (!worldData.has(`${x},${y},${z}`)) {
+                                            worldData.set(`${x},${y},${z}`, 16);
+                                        }
+                                    }
+                                }
+                            }
+                        
+                            // ===== 枝（高さ比例）=====
+                            const branchCount = Math.floor(treeHeight / 3);
+                        
+                            for (let i = 0; i < branchCount; i++) {
+                        
+                                const by = surfaceY + (leafStart + Math.floor(Math.random() * (treeHeight - leafStart))) * SCALE;
+                        
+                                const dirX = Math.random() < 0.5 ? -1 : 1;
+                                const dirZ = Math.random() < 0.5 ? -1 : 1;
+                                const branchLength = 2 + Math.floor(Math.random() * 3);
+                        
+                                for (let l = 1; l <= branchLength; l++) {
+                                    const x = px + dirX * l * SCALE;
+                                    const y = by + Math.floor(l / 2) * SCALE; // 少し上向き
+                                    const z = pz + dirZ * l * SCALE;
+                        
+                                    if (!worldData.has(`${x},${y},${z}`)) {
+                                        worldData.set(`${x},${y},${z}`, 16);
+                                    }
+                                }
+                            }
+                        
+                            // ===== 葉（高さ比例・縦多め）=====
+                            for (let ly = leafStart; ly <= leafEnd; ly++) {
+                        
+                                const y = surfaceY + ly * SCALE;
+                        
+                                // 高さに比例して広がる
+                                const t = ly / leafEnd;
+                                const radius = Math.floor(1 + t * 5); // 最大5
+                        
+                                for (let lx = -radius; lx <= radius; lx++) {
+                                    for (let lz = -radius; lz <= radius; lz++) {
+                        
+                                        const dist = Math.abs(lx) + Math.abs(lz);
+                        
+                                        // 上ほど密度UP
+                                        const density =
+                                            dist === 0 ? 0.95 :
+                                            dist === 1 ? 0.85 :
+                                            dist === 2 ? 0.6 :
+                                            dist === 3 ? 0.35 : 0.2;
+                        
+                                        if (Math.random() > density) continue;
+                        
+                                        // ランダム欠け
+                                        if (Math.random() < 0.1) continue;
+                        
+                                        const x = px + lx * SCALE;
+                                        const z = pz + lz * SCALE;
+                        
+                                        worldData.set(`${x},${y},${z}`, 12);
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+
+                        let hBase = Math.sin(x * 0.05 + seed) * Math.cos(z * 0.05 + seed) * 3;
+                        let bMix = (Math.sin(x * 0.1 + biomeSeed) + Math.cos(z * 0.1 + biomeSeed)   ) / 2;
+                        let mountainSizeMod = (Math.sin(x * 0.03 + seed) + 1) * 0.5;
+                        let hRaw = hBase;
+                        let stonePower = 0;
+                        if (bMix > 0.5) {
+                            let t = (bMix - 0.5) / 0.3;
+                            let curve = Math.pow(Math.max(0, t), 1.5);
+                            let maxHeight = 4 + (mountainSizeMod * 2);
+
+                            // --- 修正箇所: 複数の波を組み合わせて複雑な形にする ---
+                            // biomeSeedを混ぜることで、世界ごとに「ゴツゴツ感」のパターンが変わります
+                            let rugged = (
+                                Math.sin(x * 0.4 + seed) * 1.2 + 
+                                Math.cos(z * 0.35 + biomeSeed) * 1.2 + // z軸の動きと別シードを混ぜる
+                                Math.sin((x + z) * 0.7 + seed * 0.5) * 0.6 // 斜めの細かいノイズ
+                            );
+                            // ----------------------------------------------
+
+                            hRaw += (curve * maxHeight) + (curve * rugged);
+                            stonePower = t;
+                        } else if (bMix < -0.5) {
+                            let t = Math.min(1, (Math.abs(bMix) - 0.5) / 0.2);
+                            hRaw *= (1 - t * 0.8);
+                        }
+
+                        let h = Math.round(hRaw);
+                        const surfaceY = h * SCALE;
+                        for (let y = -8 * SCALE; y <= Math.max(surfaceY, SEA_LEVEL); y += SCALE) {
+                            let blockId = 0;
+                            if (y <= surfaceY) {
+                                if (stonePower > 1.5) {
+                                    blockId = 10;
+                                } else if (stonePower > 0.15) {
+                                    blockId = 3;
+                                }
+                                else if (y < surfaceY - 2 * SCALE) blockId = 3;
+                                else if (y < surfaceY) blockId = 2;
+                                else blockId = (y <= SEA_LEVEL) ? 7 : 1;
+                            } else if (y <= SEA_LEVEL) blockId = 6;
+                            if (blockId !== 0) worldData.set(`${px},${y},${pz}`, blockId);
+                        }
+
+                        // --- 現世の木生成 (コンパクト版) ---
+                        const currentSurfaceId = worldData.get(`${px},${surfaceY},${pz}`);
+                        if (currentSurfaceId === 1 && surfaceY > SEA_LEVEL && Math.random() > 0.98) {
+                            const trunkHeight = 3 + Math.floor(Math.random() * 2); // 3〜4マスの高さに抑える
+
+                            // 原木(ID:4)
+                            for (let ty = 1; ty <= trunkHeight; ty++) {
+                                worldData.set(`${px},${surfaceY + ty * SCALE},${pz}`, 4);
+                            }
+
+                            // 葉っぱ(ID:5) - 範囲を -1〜1 に縮小
+                            for (let ly = -1; ly <= 1; ly++) {
+                                for (let lx = -1; lx <= 1; lx++) {
+                                    for (let lz = -1; lz <= 1; lz++) {
+                                        // 最先端（ly=1）は真上だけに限定してシュッとさせる
+                                        if (ly === 1 && (lx !== 0 || lz !== 0)) continue;
+
+                                        const leafPos = `${px + lx * SCALE},${surfaceY +  (trunkHeight + ly) * SCALE},${pz + lz * SCALE}`;
+
+                                        // 原木がない場所だけに葉っぱを置く
+                                        if (!worldData.has(leafPos)) {
+                                            worldData.set(leafPos, 5);
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-                updateInstances();
             }
         }
+        updateInstances();
+        camera.position.set(0, 40, 0); 
+    }
 
-        window.onload = () => { init(); updateHotbar(); };
+function generateChunk(cx, cz) {
+
+    const key = `${cx},${cz}`;
+    if (generatedChunks.has(key)) return;
+    generatedChunks.add(key);
+
+    const seed = 1234;
+
+    for (let x = 0; x < CHUNK_SIZE; x++) {
+        for (let z = 0; z < CHUNK_SIZE; z++) {
+
+            const wx = (cx * CHUNK_SIZE + x) * SCALE;
+            const wz = (cz * CHUNK_SIZE + z) * SCALE;
+
+            let hBase = Math.sin(wx * 0.05 + seed) * Math.cos(wz * 0.05 + seed) * 3;
+            let h = Math.round(hBase);
+            const surfaceY = h * SCALE;
+
+            for (let y = -8 * SCALE; y <= Math.max(surfaceY, SEA_LEVEL); y += SCALE) {
+
+                let blockId = 0;
+
+                if (y <= surfaceY) {
+                    if (y < surfaceY - 2 * SCALE) blockId = 3;
+                    else if (y < surfaceY) blockId = 2;
+                    else blockId = (y <= SEA_LEVEL) ? 7 : 1;
+                }
+                else if (y <= SEA_LEVEL) blockId = 6;
+
+                if (blockId !== 0) {
+                    worldData.set(`${wx},${y},${wz}`, blockId);
+                }
+            }
+        }
+    }
+}
+
+
+function updateChunks() {
+
+    const px = camera.position.x;
+    const pz = camera.position.z;
+
+    const cx = Math.floor(px / (CHUNK_SIZE * SCALE));
+    const cz = Math.floor(pz / (CHUNK_SIZE * SCALE));
+
+    for (let x = -VIEW_DISTANCE; x <= VIEW_DISTANCE; x++) {
+        for (let z = -VIEW_DISTANCE; z <= VIEW_DISTANCE; z++) {
+
+            generateChunk(cx + x, cz + z);
+
+        }
+    }
+
+    updateInstances();
+}
+        
+        
+function checkCollision(px, py, pz) {
+    const playerBottom = py - 0.5 - PLAYER_HEIGHT / 2;
+    const playerTop    = py - 0.5 + PLAYER_HEIGHT / 2;
+
+    const offsets = [-0.35 * SCALE, 0, 0.35 * SCALE];
+
+    for (let ox of offsets) {
+        for (let oz of offsets) {
+            const bx = snap(px + ox);
+            const bz = snap(pz + oz);
+
+            for (let by = snap(playerBottom - SCALE); by <= snap(playerTop + SCALE); by += SCALE) {
+                const bid = worldData.get(`${bx},${by},${bz}`);
+                if (bid === undefined) continue;
+                if (bid === 6 || bid === 21) continue;
+
+                const def = ITEM_DEFS[String(bid)];
+                if (!def) continue;
+
+                let blockBottom, blockTop;
+
+                if (def.isHalf) {
+                    const halfHeight = SCALE * 0.5;
+                    const isTopHalf = def.half === "top";
+
+                    if (isTopHalf) {
+                        blockBottom = by + halfHeight;
+                        blockTop    = by + SCALE;
+                    } else {
+                        blockBottom = by;
+                        blockTop    = by + halfHeight;
+                    }
+
+                    // 足が上面に近い場合だけ登れる（衝突無視）
+                    const footNearTop = playerBottom >= blockTop - SCALE * 0.2 && playerBottom <= blockTop + SCALE * 0.1;
+
+                    if (footNearTop) {
+                        continue;  // 登れるので衝突無視
+                    }
+                } else {
+                    blockBottom = by;
+                    blockTop    = by + SCALE;
+                }
+
+                // 重なりチェック（登れない部分は普通に衝突）
+                if (playerTop > blockBottom && playerBottom < blockTop) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+
+    function animate() {
+        requestAnimationFrame(animate);
+        if (isPlaying && !isInvOpen) {
+updateChunks();
+
+// animate() 内の該当部分を置き換え
+let dir = new THREE.Vector3(); 
+camera.getWorldDirection(dir); 
+dir.y = 0; 
+dir.normalize();
+
+let side = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), dir).normalize();
+
+let move = new THREE.Vector3();
+if (keys.w) move.addScaledVector(dir, PHYSICS.moveSpeed);
+if (keys.s) move.addScaledVector(dir, -PHYSICS.moveSpeed);
+if (keys.a) move.addScaledVector(side, PHYSICS.moveSpeed);
+if (keys.d) move.addScaledVector(side, -PHYSICS.moveSpeed);
+
+// ★ ここで定義（if/elseの外に出す！）
+const moveX = new THREE.Vector3(move.x, 0, 0);
+const moveZ = new THREE.Vector3(0, 0, move.z);
+
+const stepHeight = SCALE * 0.7;
+
+function tryStep(sideMove) {
+    const nextX = camera.position.x + sideMove.x;
+    const nextZ = camera.position.z + sideMove.z;
+
+    if (!checkCollision(nextX, camera.position.y, nextZ)) {
+        camera.position.x = nextX;
+        camera.position.z = nextZ;
+        return true;
+    }
+
+    let stepped = false;
+    for (let dy = 0.1 * SCALE; dy <= stepHeight; dy += 0.1 * SCALE) {
+        if (!checkCollision(nextX, camera.position.y + dy, nextZ)) {
+            camera.position.y += dy;
+            camera.position.x = nextX;
+            camera.position.z = nextZ;
+            stepped = true;
+            break;
+        }
+    }
+    return stepped;
+}
+
+// ===== 視点回転 =====
+const rotSpeed = 0.03;
+
+if (keys["arrowleft"]) {
+    camera.rotation.y += rotSpeed;
+}
+if (keys["arrowright"]) {
+    camera.rotation.y -= rotSpeed;
+}
+if (keys["arrowup"]) {
+    camera.rotation.x += rotSpeed;
+}
+if (keys["arrowdown"]) {
+    camera.rotation.x -= rotSpeed;
+}
+
+// 上下向きすぎ防止
+const maxPitch = Math.PI / 2 - 0.1;
+camera.rotation.x = Math.max(-maxPitch, Math.min(maxPitch, camera.rotation.x));
+
+// 実際の移動
+if (yVel <= 0) {
+    // 地上・通常時：自動ステップ
+    tryStep(moveX);
+    tryStep(moveZ);
+} else {
+    // ジャンプ中・空中：自動ステップ無効
+    let moved = false;
+
+    if (!checkCollision(camera.position.x + moveX.x, camera.position.y, camera.position.z)) {
+        camera.position.x += moveX.x;
+        moved = true;
+    }
+
+    if (!checkCollision(camera.position.x, camera.position.y, camera.position.z + moveZ.z)) {
+        camera.position.z += moveZ.z;
+        moved = true;
+    }
+}
+            // 垂直移動（ジャンプ・重力）の衝突判定
+            yVel -= PHYSICS.gravity;
+            let nextY = camera.position.y + yVel;
+
+            if (yVel > 0) {
+                if (checkCollision(camera.position.x, nextY, camera.position.z)) {
+                    yVel = 0;
+                } else {
+                    camera.position.y = nextY;
+                }
+            }
+            else {
+                if (checkCollision(camera.position.x, nextY, camera.position.z)) {
+                    yVel = 0;
+                    if (keys[' ']) {
+                        yVel = PHYSICS.jumpForce;
+                    }
+                } else {
+                    camera.position.y = nextY;
+                }
+            }
+
+            const footBlock = worldData.get(
+                `${snap(camera.position.x)},${snap(camera.position.y - SCALE)},${snap(camera.position.z)}`
+            );
+
+            if (footBlock === 21) {
+                const now = Date.now();
+                if (now - lastDamageTime > ITEM_DEFS["21"].damageInterval) {
+                    playerHP -= ITEM_DEFS["21"].damage;
+                    console.log(playerHP);
+
+                    updateHPBar();
+                    lastDamageTime = now;
+                }
+            }
+
+            const headBlock = worldData.get(`${snap(camera.position.x)},${snap(camera.position.y)},${snap(camera.position.z)}`);
+            
+            if (headBlock === 6) { 
+                //水中
+                scene.fog.color.setHex(0x001e3d); 
+                scene.fog.density = 0.08; 
+            } else if (headBlock === 21) {
+                //マグマ
+                scene.fog.color.setHex(0xff8800); 
+                scene.fog.density = 0.08; 
+            } else { 
+                // 地上
+                const s = styles[currentDimension];
+                scene.fog.color.setHex(s.fog);
+                scene.fog.density = s.fogDens / 1000;
+            }
+
+            if (camera.position.y < -420) { 
+                let nextDim = (currentDimension + 1) % styles.length;
+                switchDimension(nextDim); 
+
+                // 1. まずプレイヤーを上空（例えばy=60）へ移動
+                camera.position.y = 40; 
+                yVel = 0; // 落下速度をリセット（これ重要！）
+
+                // 2. テレポート先の座標(0, 0)付近で、地面がある場所を探す
+                // 地面が見つからなければ、安全のために高い位置からスタート
+                for (let checkY = 40; checkY > -40; checkY -= SCALE) {
+                    const bid = worldData.get(`${0},${snap(checkY)},${0}`);
+                    if (bid && bid !== 6) { // 水以外のブロックを見つけたら
+                        camera.position.set(0, checkY + PLAYER_HEIGHT + SCALE, 0);
+                        break;
+                    }
+                }
+            }
+        }
+        renderer.render(scene, camera);
+    }
+
+    // ... インスタンス描画・操作系（すべて維持） ...
+function updateInstances() {
+    const dummy = new THREE.Object3D();
+
+    // 1. 全リセット + culling完全オフ + bounding巨大化
+    Object.values(instances).forEach(inst => {
+        if (inst) {
+            inst.count = 0;
+            inst.instanceMatrix.needsUpdate = true;
+            inst.frustumCulled = false;           // これでカリング無効化（超重要！）
+            
+            // boundingSphereを手動で巨大に（computeBoundingSphereの代わり）
+            if (!inst.boundingSphere) {
+                inst.boundingSphere = new THREE.Sphere();
+            }
+            inst.boundingSphere.center.set(0, 0, 0);
+            inst.boundingSphere.radius = 30000;   // めちゃくちゃ大きくしてカリングを回避
+        }
+    });
+
+    // 2. 位置セット
+    const idCounters = {};
+    Object.keys(instances).forEach(id => idCounters[id] = 0);
+
+    worldData.forEach((id, pos) => {
+        if (id === 6 || id === 21) return;
+
+        const mesh = instances[id];
+        if (!mesh) {
+            console.warn(`インスタンスが見つからない: ID=${id}`);
+            return;
+        }
+
+        const [x, y, z] = pos.split(',').map(Number);
+
+        dummy.position.set(x, y, z);
+        dummy.updateMatrix();
+
+        mesh.setMatrixAt(idCounters[id], dummy.matrix);
+        idCounters[id]++;
+    });
+
+    // 3. count反映
+    Object.keys(idCounters).forEach(id => {
+        const mesh = instances[id];
+        if (mesh) {
+            mesh.count = idCounters[id];
+            mesh.instanceMatrix.needsUpdate = true;
+        }
+    });
+
+    console.log(`updateInstances完了: 総ブロック ${worldData.size}個`);
+
+    updateLiquidMesh();
+    rebuildLights();
+}
+
+    function rebuildLights() {
+        // ★ 修正：全ディメンションのライトをシーンからクリア（重複防止）
+        worldMaps.forEach(dim => {
+            dim.lights.forEach(light => scene.remove(light));
+            dim.lights.clear();
+        });
+
+        // 現在のディメンションだけ再構築
+        worldData.forEach((id, pos) => {
+            const def = ITEM_DEFS[String(id)];
+            if (!def || !def.light) return;
+
+            const [x, y, z] = pos.split(',').map(Number);
+            const light = new THREE.PointLight(
+                def.light.color,
+                def.light.intensity,
+                def.light.distance
+            );
+            light.position.set(x, y + SCALE * 0.3, z);
+            light.castShadow = false;  // ★ 明示的に影を落とさない
+
+            scene.add(light);
+            lightMap.set(pos, light);
+        });
+    }
+
+function updateLiquidMesh() {
+    // 既存メッシュ削除（水・マグマ・葉っぱ全部）
+    ["waterMesh", "magmaMesh", "leafMesh"].forEach(name => {
+        const old = scene.getObjectByName(name);
+        if (old) scene.remove(old);
+    });
+
+    // 処理対象：葉っぱ(5,12) + 水(6) + マグマ(21)
+    const transparentIds = [5, 6, 12, 21];
+
+    transparentIds.forEach(blockId => {
+        const inst = instances[blockId];
+        if (!inst) return;
+
+        const positions = [];
+        const uvs = [];
+        const indices = [];
+        let v = 0;
+
+        const tex = inst.material.map;
+        if (!tex || !tex.image) return;
+
+        const TW = tex.image.width;
+        const TH = tex.image.height;
+        const m = 0.01;
+
+        worldData.forEach((id, key) => {
+            if (id !== blockId) return;
+
+            const [px, py, pz] = key.split(',').map(Number);
+
+            FACE_DATA.forEach(face => {
+                const nx = px + face.dir[0] * SCALE;
+                const ny = py + face.dir[1] * SCALE;
+                const nz = pz + face.dir[2] * SCALE;
+
+                const neighbor = worldData.get(`${nx},${ny},${nz}`);
+
+                // ★★★ ここだけ変更！ ★★★
+                // 同じ種類のブロック同士（または存在するブロック）なら面を消す
+                // → 空気（undefined）以外は基本的に消す（触れている面は消える）
+                if (neighbor !== undefined) {
+                    return;  // 隣に何かある → 面を消す（水・マグマ・葉っぱ全部これでOK）
+                }
+
+                // 空気だけ面を描画
+                face.corners.forEach(corner => {
+                    positions.push(
+                        px + (corner[0] - 0.5) * SCALE,
+                        py + (corner[1] - 0.5) * SCALE,
+                        pz + (corner[2] - 0.5) * SCALE
+                    );
+                });
+
+                // UV設定（そのまま）
+                let uvDef;
+                if (blockId === 6) {
+                    uvDef = face.type === 'top' ? { x: 8, y: 0 } : { x: 0, y: 0 };
+                } else if (blockId === 21) {
+                    uvDef = face.type === 'top' ? { x: 8, y: 8 } : { x: 0, y: 8 };
+                } else {  // 葉っぱ
+                    uvDef = face.type === 'top' ? { x: 8, y: 8 } : { x: 0, y: 8 };
+                }
+
+                const x0 = (uvDef.x + m) / TW;
+                const x1 = (uvDef.x + 8 - m) / TW;
+                const y0 = (TH - uvDef.y - m) / TH;
+                const y1 = (TH - (uvDef.y + 8) + m) / TH;
+
+                uvs.push(x0, y0, x0, y1, x1, y0, x1, y1);
+
+                indices.push(v, v+1, v+2, v+2, v+1, v+3);
+                v += 4;
+            });
+        });
+
+        if (positions.length === 0) {
+            console.log(`メッシュ空: blockId=${blockId}`);
+            return;
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+        geometry.setIndex(indices);
+        geometry.computeVertexNormals();
+
+        const mesh = new THREE.Mesh(geometry, inst.material.clone());
+        mesh.name = blockId === 6 ? "waterMesh" : blockId === 21 ? "magmaMesh" : "leafMesh";
+        mesh.receiveShadow = false;
+        mesh.castShadow = false;
+        mesh.renderOrder = 5;  // 透明物は後ろに描画
+        scene.add(mesh);
+    });
+}
+
+    // 1. ワールドをファイルとして書き出し (Save)
+    function saveToFile() {
+        const saveData = {
+            maps: worldMaps.map(dim => ({
+                blocks: Array.from(dim.blocks.entries())
+            })),
+            pos: {
+                x: camera.position.x,
+                y: camera.position.y,
+                z: camera.position.z
+            },
+            dim: currentDimension
+        };
+    
+        const blob = new Blob([JSON.stringify(saveData)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `world_save_${Date.now()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    // 2. ファイルから読み込み (Load)
+    function loadFromFile() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+
+        input.onchange = e => {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+
+            reader.onload = event => {
+                const data = JSON.parse(event.target.result);
+
+                worldMaps = data.maps.map(dim => ({
+                    blocks: new Map(dim.blocks),
+                    lights: new Map()
+                }));
+
+                camera.position.set(data.pos.x, data.pos.y, data.pos.z);
+                currentDimension = data.dim;
+
+                switchDimension(currentDimension);
+                updateInstances();
+
+                alert("ワールドを読み込みました！");
+            };
+
+            reader.readAsText(file);
+        };
+
+        input.click();
+    }
+
+    function setupControls() {
+        document.addEventListener('mousedown', e => { 
+            if(!isPlaying && !isInvOpen) document.body.requestPointerLock(); 
+            else if(isPlaying) handleAction(e.button === 0 ? 'destroy' : 'place'); 
+        });
+        document.addEventListener('pointerlockchange', () => {
+            isPlaying = !!document.pointerLockElement; gameStarted = true;
+            document.getElementById('overlay').style.display = isPlaying ? 'none' : 'flex';
+            document.getElementById('crosshair').style.display = isPlaying ? 'block' : 'none';
+        });
+        window.onmousemove = e => { if(isPlaying) { 
+            camera.rotation.y -= e.movementX * 0.002; camera.rotation.x = Math.max(-1.5, Math.min(1.5, camera.rotation.x - e.movementY * 0.002)); 
+        }};
+        window.onkeydown = e => {
+
+    if (e.key.toLowerCase() === 'e') {
+        toggleInventory();
+        return;
+    }
+            if (isInvOpen) return;
+            const keyIndex = slotKeys.indexOf(e.key);
+            if (keyIndex !== -1) { selectedSlot = keyIndex; updateHotbar(); }
+            if (e.key === ' ') keys[' '] = true; else keys[e.key.toLowerCase()] = true;
+            if (e.key.toLowerCase() === 'k') saveToFile();
+            if (e.key.toLowerCase() === 'l') loadFromFile();
+            if (e.key.startsWith('Arrow')) keys[e.key.toLowerCase()] = true;
+            if (isPlaying) {
+                if (e.key === '/') handleAction('destroy');
+                if (e.key === '\\' || e.key === '¥') handleAction('place');
+            }
+        };
+        window.onkeyup = e => { if (e.key === ' ') keys[' '] = false; else keys[e.key.toLowerCase()] = false; };
+    }
+
+    function handleAction(type) {
+        // ────────────────
+        // 1. 現在選択中のアイテムを取得
+        const currentId = hotbarItems[selectedSlot];
+        if (currentId == null) return;
+
+        const def = ITEM_DEFS[String(currentId)];
+        if (!def) return;
+
+        // ────────────────
+        // 2. Raycast（ブロックに当たっているか判定）
+        const ray = new THREE.Raycaster();
+        ray.setFromCamera(new THREE.Vector2(0,0), camera);
+
+        const activeObjects = Object.keys(instances)
+            .map(id => {
+                if (Number(id) === 6) return scene.getObjectByName('waterMesh');
+                if (Number(id) === 21) return scene.getObjectByName('magmaMesh');
+                return instances[id];
+            })
+            .filter(obj => obj);
+
+        const hits = ray.intersectObjects(activeObjects, true);
+        const hitSomething = hits.length > 0 && hits[0].distance < SCALE * 12;
+
+        let hit = null;
+        let placePos = null;
+        let destroyPos = null;
+
+        if (hitSomething) {
+            hit = hits[0];
+            const snap = v => Math.round(v / SCALE) * SCALE;
+
+            // 破壊位置（面の少し内側）
+            destroyPos = hit.point.clone()
+                .sub(hit.face.normal.clone().multiplyScalar(SCALE * 0.5));
+
+            // 設置位置（面の少し外側）
+            placePos = hit.point.clone()
+                .add(hit.face.normal.clone().multiplyScalar(SCALE * 0.5));
+        }
+
+        // ────────────────
+        // 3. アクション分岐
+        if (type === 'destroy') {
+            // 左クリック／/キー → 破壊のみ（何も見えてなくても無視でOK）
+            if (!hitSomething) return;
+
+            const key = `${snap(destroyPos.x)},${snap(destroyPos.y)},${snap(destroyPos.z)}`;
+
+            // ライト削除
+            if (lightMap.has(key)) {
+                scene.remove(lightMap.get(key));
+                lightMap.delete(key);
+            }
+
+            const brokenId = worldData.get(key);
+            worldData.delete(key);
+            updateInstances();
+
+            // ドロップ処理
+            const brokenDef = ITEM_DEFS[String(brokenId)];
+            if (brokenDef && brokenDef.placeable !== false) {
+                inventoryCounts[brokenId] = (inventoryCounts[brokenId] || 0) + 1;
+                updateHotbar();
+            }
+            return;
+        }
+
+        // ── ここから右クリック／\キー系の処理 ──
+
+        // 4. 「使う」系のアイテムかどうか
+        const isUsableItem = def.type === "item" || def.placeable === false;
+
+        if (isUsableItem) {
+            // 見ていなくても使える
+            performItemUse(currentId, def);
+            return;
+        }
+
+        // 5. ブロック設置系の場合 → 何か当たってないと設置できない
+        if (!hitSomething) {
+            // 「ブロックを見ていないのに設置しようとした」→ 無視 or メッセージ
+            return;
+        }
+
+        // ここからは普通のブロック設置処理
+        const bx = snap(placePos.x);
+        const by = snap(placePos.y);
+        const bz = snap(placePos.z);
+        const key = `${bx},${by},${bz}`;
+
+        // プレイヤーと重なってないかチェック
+        const pX = snap(camera.position.x);
+        const pZ = snap(camera.position.z);
+        const pY_head = snap(camera.position.y);
+        const pY_feet = snap(camera.position.y - SCALE);
+
+        if (bx === pX && bz === pZ && (by === pY_head || by === pY_feet)) {
+            return; // プレイヤーの中に設置しようとしている
+        }
+
+        // 在庫チェック
+        if ((inventoryCounts[currentId] || 0) <= 0) return;
+
+        // 光源ならライト追加
+        if (def.light) {
+            const light = new THREE.PointLight(
+                def.light.color,
+                def.light.intensity,
+                def.light.distance
+            );
+            light.position.set(bx, by + SCALE * 0.3, bz);
+            scene.add(light);
+            lightMap.set(key, light);
+        }
+
+        worldData.set(key, currentId);
+        updateInstances();
+
+        inventoryCounts[currentId]--;
+        updateHotbar();
+    }
+
+    // 新しく作る関数：アイテム使用処理（共通化） ← これを以下のように修正
+    function performItemUse(id, def) {
+        console.log("アイテム使用:", def.name);
+
+        if (def.name === "heart") {
+            playerHP = Math.min(MAX_HP, playerHP + 4);
+            updateHPBar();
+        }
+
+        // ★ 修正：消費フラグで分岐（デフォルトは消費する）
+        // ITEM_DEFS に consumable: false を追加したアイテムだけ消費しない
+        if (def.consumable !== false && inventoryCounts[id] !== undefined) {
+            inventoryCounts[id] = Math.max(0, inventoryCounts[id] - 1);
+            updateHotbar();
+        }
+
+        // 必要ならサウンドやパーティクルなど追加可能
+    }
+
+    function toggleInventory() {
+        isInvOpen = !isInvOpen;
+        const inv = document.getElementById('inventory');
+
+        if (isInvOpen) {
+            inv.style.display = 'grid';
+            isPlaying = false;
+            document.exitPointerLock();
+
+            // ★ 追加：タブ初期化
+            setInventoryTab(currentInvTab);
+
+        } else {
+            inv.style.display = 'none';
+            document.body.requestPointerLock();
+        }
+    }
+
+    function setInventoryTab(tab) {
+        currentInvTab = tab;
+
+        document.querySelectorAll("#inv-tabs button").forEach(btn => {
+            btn.classList.toggle("active", btn.dataset.tab === tab);
+        });
+
+        renderInventory();
+    }
+
+    function getInventoryList() {
+        return Object.keys(ITEM_DEFS)
+            .filter(id => ITEM_DEFS[id].tab === currentInvTab) // 現在のタブに属するアイテムだけ
+            .map(id => ({
+                id: isNaN(id) ? id : Number(id),   // IDを数値化（数字IDの場合）
+                count: getItemCount(id)             // 所持数を取得
+            }));
+    }
+
+    function renderInventory() {
+        const content = document.getElementById("inv-content");
+        if (!content) return;
+
+        content.innerHTML = "";
+
+        const list = getInventoryList();
+
+        list.forEach(item => {
+            const id = item.id;
+            const count = item.count;
+
+            if (count <= 0) return;
+
+            const slot = document.createElement("div");
+            slot.className = "inv-slot";
+
+            const def = ITEM_DEFS[String(id)];
+
+            // ★ ここを修正：ハーフブロックなら baseId を使う
+            let textureId = id;
+            if (def?.isHalf && def.baseId !== undefined) {
+                textureId = def.baseId;
+            }
+
+            slot.style.backgroundImage = `url('texture/${textureId}/${textureId}.png')`;
+
+            if (def && def.type === "block") {
+                slot.style.backgroundSize = "400%";
+                if ( textureId === 6 || textureId === 21) {
+                    slot.style.backgroundPosition = "-44px -44px";
+                } else {
+                    slot.style.backgroundPosition = "-44px -88px";
+                }
+            } else {
+                slot.style.backgroundSize = "contain";
+                slot.style.backgroundPosition = "center";
+            }
+
+            slot.style.backgroundRepeat = "no-repeat";
+
+            // 個数表示
+            const counter = document.createElement("div");
+            counter.style.position = "absolute";
+            counter.style.bottom = "2px";
+            counter.style.right = "2px";
+            counter.style.fontSize = "10px";
+            counter.style.color = "white";
+            counter.style.textShadow = "0 0 2px black";
+            counter.innerText = count;
+            slot.appendChild(counter);
+
+            // クリックでホットバーに入れる
+            slot.onclick = () => {
+                hotbarItems[selectedSlot] = id;
+                updateHotbar();
+            };
+
+            content.appendChild(slot);
+        });
+    }
+
+    function updateHotbar() {
+        const hotbar = document.getElementById('hotbar');
+        hotbar.innerHTML = '';
+
+        hotbarItems.forEach((id, index) => {
+            const slot = document.createElement('div');
+            slot.className = 'slot' + (selectedSlot === index ? ' active' : '');
+            slot.dataset.key = slotKeys[index];
+
+            if (id !== null) {
+                const def = ITEM_DEFS[String(id)];
+
+                // ★ ここを修正：ハーフブロックなら baseId を使う
+                let textureId = id;
+                if (def?.isHalf && def.baseId !== undefined) {
+                    textureId = def.baseId;
+                }
+
+                slot.style.backgroundImage = `url('texture/${textureId}/${textureId}.png')`;
+
+                if (def && def.type === "block") {
+                    slot.style.backgroundSize = "400%";
+                    if ( textureId === 6 || textureId === 21) {
+                        slot.style.backgroundPosition = "-44px -44px";
+                    } else {
+                        slot.style.backgroundPosition = "-44px -88px";
+                    }
+                } else {
+                    slot.style.backgroundSize = "contain";
+                    slot.style.backgroundPosition = "center";
+                }
+
+                slot.style.backgroundRepeat = "no-repeat";
+
+                // 所持数表示
+                const count = getItemCount(id);
+                if (count > 0) {
+                    const span = document.createElement('span');
+                    span.textContent = count;
+                    span.style.position = 'absolute';
+                    span.style.bottom = '2px';
+                    span.style.right = '4px';
+                    span.style.fontSize = '10px';
+                    span.style.color = 'white';
+                    span.style.textShadow = '0 0 2px black';
+                    slot.appendChild(span);
+                }
+            }
+
+            hotbar.appendChild(slot);
+        });
+    }
+
+
+
+    init();
     </script>
-</body>
-</html>
+    </body>
+    </html>
