@@ -127,6 +127,9 @@
     const VIEW_DISTANCE = 3;
     const generatedChunks = new Set();
         
+    let lastChunkX = null;
+    let lastChunkZ = null;
+        
     const PLAYER_HEIGHT = SCALE * 1.8;
     const SEA_LEVEL = -1 * SCALE;
     const MAG_LEVEL = 1 * SCALE;
@@ -735,15 +738,23 @@ function updateChunks() {
     const cx = Math.floor(px / (CHUNK_SIZE * SCALE));
     const cz = Math.floor(pz / (CHUNK_SIZE * SCALE));
 
+    // 同じチャンクなら何もしない
+    if (cx === lastChunkX && cz === lastChunkZ) return;
+
+    lastChunkX = cx;
+    lastChunkZ = cz;
+
+    let generated = false;
+
     for (let x = -VIEW_DISTANCE; x <= VIEW_DISTANCE; x++) {
         for (let z = -VIEW_DISTANCE; z <= VIEW_DISTANCE; z++) {
-
+            const before = generatedChunks.size;
             generateChunk(cx + x, cz + z);
-
+            if (generatedChunks.size !== before) generated = true;
         }
     }
 
-    updateInstances();
+    if (generated) updateInstances();
 }
         
         
@@ -1477,60 +1488,56 @@ function updateLiquidMesh() {
         });
     }
 
-    function updateHotbar() {
-        const hotbar = document.getElementById('hotbar');
-        hotbar.innerHTML = '';
+function updateHotbar() {
+    const hotbar = document.getElementById('hotbar');
+    hotbar.innerHTML = '';
 
-        hotbarItems.forEach((id, index) => {
-            const slot = document.createElement('div');
-            slot.className = 'slot' + (selectedSlot === index ? ' active' : '');
-            slot.dataset.key = slotKeys[index];
+    hotbarItems.forEach((id, index) => {
+        const slot = document.createElement('div');
+        slot.className = 'slot' + (selectedSlot === index ? ' active' : '');
+        slot.dataset.key = slotKeys[index];
 
-            if (id !== null) {
-                const def = ITEM_DEFS[String(id)];
+        if (id !== null) {
+            const def = ITEM_DEFS[String(id)];
 
-                // ★ ここを修正：ハーフブロックなら baseId を使う
-                let textureId = id;
-                if (def?.isHalf && def.baseId !== undefined) {
-                    textureId = def.baseId;
-                }
-
-                slot.style.backgroundImage = `url('texture/${textureId}/${textureId}.png')`;
-
-                if (def && def.type === "block") {
-                    slot.style.backgroundSize = "400%";
-                    if ( textureId === 6 || textureId === 21) {
-                        slot.style.backgroundPosition = "-44px -44px";
-                    } else {
-                        slot.style.backgroundPosition = "-44px -88px";
-                    }
-                } else {
-                    slot.style.backgroundSize = "contain";
-                    slot.style.backgroundPosition = "center";
-                }
-
-                slot.style.backgroundRepeat = "no-repeat";
-
-                // 所持数表示
-                const count = getItemCount(id);
-                if (count > 0) {
-                    const span = document.createElement('span');
-                    span.textContent = count;
-                    span.style.position = 'absolute';
-                    span.style.bottom = '2px';
-                    span.style.right = '4px';
-                    span.style.fontSize = '10px';
-                    span.style.color = 'white';
-                    span.style.textShadow = '0 0 2px black';
-                    slot.appendChild(span);
-                }
+            let textureId = id;
+            if (def?.isHalf && def.baseId !== undefined) {
+                textureId = def.baseId;
             }
 
-            hotbar.appendChild(slot);
-        });
-    }
+            slot.style.backgroundImage = `url('texture/${textureId}/${textureId}.png')`;
 
+            if (def && def.type === "block") {
+                slot.style.backgroundSize = "400%";
+                if (textureId === 6 || textureId === 21) {
+                    slot.style.backgroundPosition = "-44px -44px";
+                } else {
+                    slot.style.backgroundPosition = "-44px -88px";
+                }
+            } else {
+                slot.style.backgroundSize = "contain";
+                slot.style.backgroundPosition = "center";
+            }
 
+            slot.style.backgroundRepeat = "no-repeat";
+
+            const count = getItemCount(id);
+            if (count !== undefined) {
+                const counter = document.createElement("div");
+                counter.style.position = "absolute";
+                counter.style.bottom = "2px";
+                counter.style.right = "2px";
+                counter.style.fontSize = "10px";
+                counter.style.color = "white";
+                counter.style.textShadow = "0 0 2px black";
+                counter.innerText = count;
+                slot.appendChild(counter);
+            }
+        }
+
+        hotbar.appendChild(slot);
+    });
+}
 
     init();
     </script>
