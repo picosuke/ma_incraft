@@ -474,6 +474,7 @@ function switchDimension(dimIdx) {
         generatedChunks.clear();
         const s = styles[currentDimension];
         worldData = worldMaps[currentDimension].blocks;
+        worldData.clear();
         if (worldData.size === 0) {
             const range = s.range;
             scene.background = new THREE.Color(s.sky);
