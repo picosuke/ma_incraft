@@ -642,19 +642,19 @@ function switchDimension(dimIdx) {
 
                         let h = Math.round(hRaw);
                         const surfaceY = h * SCALE;
-                        for (let y = -8 * SCALE; y <= Math.max(surfaceY, SEA_LEVEL); y += SCALE) {
+                        for (let y = -8 * SCALE; y <= surfaceY; y += SCALE) {
+
                             let blockId = 0;
-                            if (y <= surfaceY) {
-                                if (stonePower > 1.5) {
-                                    blockId = 10;
-                                } else if (stonePower > 0.15) {
-                                    blockId = 3;
-                                }
-                                else if (y < surfaceY - 2 * SCALE) blockId = 3;
-                                else if (y < surfaceY) blockId = 2;
-                                else blockId = (y <= SEA_LEVEL) ? 7 : 1;
-                            } else if (y <= SEA_LEVEL) blockId = 6;
+
+                            if (y < surfaceY - 2 * SCALE) blockId = 3;
+                            else if (y < surfaceY) blockId = 2;
+                            else blockId = (y <= SEA_LEVEL) ? 7 : 1;
+
                             if (blockId !== 0) worldData.set(`${px},${y},${pz}`, blockId);
+                        }
+
+                        for (let y = surfaceY + SCALE; y <= SEA_LEVEL; y += SCALE) {
+                            worldData.set(`${px},${y},${pz}`, 6);
                         }
 
                         // --- 現世の木生成 (コンパクト版) ---
