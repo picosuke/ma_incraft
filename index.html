@@ -124,8 +124,7 @@
 
     // ===== 無限ワールド設定 =====
     const CHUNK_SIZE = 16;
-    const VIEW_DISTANCE = 3;
-    const generatedChunks = new Set();
+    const VIEW_DISTANCE = 1;
         
     let lastChunkX = null;
     let lastChunkZ = null;
@@ -226,16 +225,17 @@ let currentInvTab = "自然";
     const hotbarItems = [1, 2, 3, 4, 5, 7, 6, 8, null, null];
     const slotKeys = ['1','2','3','4','5','6','7','8','9','0'];
 
-let scene, camera, renderer,
-    worldMaps = [
-        { blocks: new Map(), lights: new Map() }, // 次元0
-        { blocks: new Map(), lights: new Map() }  // 次元1
-    ],
-    instances = {};
+let scene, camera, renderer,instances = {};
 
+let worldMaps = [
+    { blocks: new Map(), lights: new Map(), chunks: new Set() }, // 次元0 (Overworld)
+    { blocks: new Map(), lights: new Map(), chunks: new Set() }  // 次元1 (Satumoworld)
+];
 
+// 現在アクティブなデータへの参照（ポインタ）
 let worldData = worldMaps[0].blocks;
 let lightMap  = worldMaps[0].lights;
+let generatedChunks = worldMaps[0].chunks; // これを追加
 
     let sunLight;
     let isPlaying = false, selectedSlot = 0, keys = {}, yVel = 0;
@@ -450,22 +450,30 @@ document.querySelectorAll("#inv-tabs button").forEach(btn => {
     }
 
 function switchDimension(dimIdx) {
-    // ★ 追加：前の全ライトをシーンから削除（ディメンション切り替え時専用）
+    // 1. 前の次元のライトをシーンから削除
     worldMaps[currentDimension].lights.forEach(light => scene.remove(light));
-    worldMaps[currentDimension].lights.clear();
 
+    // 2. インデックスを更新
     currentDimension = dimIdx;
+
+    // 3. ★ データの参照を現在の次元のものに切り替える
     worldData = worldMaps[dimIdx].blocks;
     lightMap = worldMaps[dimIdx].lights;
+    generatedChunks = worldMaps[dimIdx].chunks; // ★ここが重要
 
-    generateWorld();
+    // 4. ★ チャンク更新用のキャッシュをリセット
+    // これにより、updateChunks() が「新しい場所に移動した」と判断して地形を作ります
+    lastChunkX = null;
+    lastChunkZ = null;
 
+    // 5. 環境設定の反映
     const s = styles[currentDimension];
     scene.background = new THREE.Color(s.sky);
     scene.fog = new THREE.FogExp2(s.fog, s.fogDens / 1000);
     if (sunLight) sunLight.color.setHex(s.sun);
 
-    updateInstances();  // これで rebuildLights() も呼ばれる
+    // 6. 再描画
+    updateInstances();
 }
 
     function generateWorld() {
@@ -689,42 +697,97 @@ function switchDimension(dimIdx) {
         camera.position.set(0, 40, 0); 
     }
 
+
 function generateChunk(cx, cz) {
+    const chunkKey = `${cx},${cz}`;
+    if (generatedChunks.has(chunkKey)) return false; // 生成済みならスキップ
+    generatedChunks.add(chunkKey);
 
-    const key = `${cx},${cz}`;
-    if (generatedChunks.has(key)) return;
-    generatedChunks.add(key);
-
-    const seed = 1234;
+    const startX = cx * CHUNK_SIZE;
+    const startZ = cz * CHUNK_SIZE;
 
     for (let x = 0; x < CHUNK_SIZE; x++) {
         for (let z = 0; z < CHUNK_SIZE; z++) {
+            const wx = (startX + x);
+            const wz = (startZ + z);
+            const px = wx * SCALE;
+            const pz = wz * SCALE;
 
-            const wx = (cx * CHUNK_SIZE + x) * SCALE;
-            const wz = (cz * CHUNK_SIZE + z) * SCALE;
+            if (currentDimension === 0) {
+                // --- 次元0: Overworld 生成 ---
+                const n = pseudoNoise(wx, wz);
+                const h = Math.round(n * 5);
+                const surfaceY = h * SCALE;
 
-            let hBase = Math.sin(wx * 0.05 + seed) * Math.cos(wz * 0.05 + seed) * 3;
-            let h = Math.round(hBase);
-            const surfaceY = h * SCALE;
-
-            for (let y = -8 * SCALE; y <= Math.max(surfaceY, SEA_LEVEL); y += SCALE) {
-
-                let blockId = 0;
-
-                if (y <= surfaceY) {
-                    if (y < surfaceY - 2 * SCALE) blockId = 3;
-                    else if (y < surfaceY) blockId = 2;
-                    else blockId = (y <= SEA_LEVEL) ? 7 : 1;
+                for (let y = -8 * SCALE; y <= Math.max(surfaceY, SEA_LEVEL); y += SCALE) {
+                    let bid = 0;
+                    if (y <= surfaceY) {
+                        if (y < surfaceY - 2 * SCALE) bid = 3; // 石
+                        else if (y < surfaceY) bid = 2;        // 土
+                        else bid = (y <= SEA_LEVEL) ? 7 : 1;   // 砂 or 草
+                    } else if (y <= SEA_LEVEL) {
+                        bid = 6; // 水
+                    }
+                    if (bid !== 0) worldData.set(`${px},${y},${pz}`, bid);
                 }
-                else if (y <= SEA_LEVEL) blockId = 6;
 
-                if (blockId !== 0) {
-                    worldData.set(`${wx},${y},${wz}`, blockId);
+                // 木の生成
+                if (worldData.get(`${px},${surfaceY},${pz}`) === 1 && surfaceY > SEA_LEVEL && Math.random() > 0.98) {
+                    const th = 3 + Math.floor(Math.random() * 2);
+                    for (let ty = 1; ty <= th; ty++) worldData.set(`${px},${surfaceY + ty * SCALE},${pz}`, 4);
+                    for (let ly = -1; ly <= 1; ly++) {
+                        for (let lx = -1; lx <= 1; lx++) {
+                            for (let lz = -1; lz <= 1; lz++) {
+                                const lpos = `${px + lx * SCALE},${surfaceY + (th + ly) * SCALE},${pz + lz * SCALE}`;
+                                if (!worldData.has(lpos)) worldData.set(lpos, 5);
+                            }
+                        }
+                    }
+                }
+
+            } else {
+                // --- 次元1: Satumoworld 生成 ---
+                const n = pseudoNoise(wx + 500, wz + 500); // シードずらし
+                const h = Math.round(n * 8 + 4);
+                const surfaceY = h * SCALE;
+
+                for (let y = -5 * SCALE; y <= Math.max(surfaceY, MAG_LEVEL); y += SCALE) {
+                    let bid = 0;
+                    if (y <= surfaceY) {
+                        if (y === surfaceY) {
+                            bid = (y < MAG_LEVEL) ? 13 : 15; // 赤土 or 赤草
+                        } else {
+                            bid = (y > surfaceY - 2 * SCALE) ? 13 : 3;
+                        }
+                    } else if (y <= MAG_LEVEL) {
+                        bid = 21; // マグマ
+                    }
+                    if (bid !== 0) worldData.set(`${px},${y},${pz}`, bid);
+                }
+
+                // 次元1の巨木生成
+                if (worldData.get(`${px},${surfaceY},${pz}`) === 15 && Math.random() > 0.985) {
+                    const th = 10 + Math.floor(Math.random() * 5);
+                    for (let ty = 1; ty <= th; ty++) {
+                        worldData.set(`${px},${surfaceY + ty * SCALE},${pz}`, 16);
+                        if (ty > th * 0.4) { // 上の方に葉っぱ
+                            for(let lx=-2; lx<=2; lx++) {
+                                for(let lz=-2; lz<=2; lz++) {
+                                    if(Math.random() > 0.3) {
+                                        const lpos = `${px+lx*SCALE},${surfaceY+ty*SCALE},${pz+lz*SCALE}`;
+                                        if(!worldData.has(lpos)) worldData.set(lpos, 12);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
+    return true;
 }
+
 
 
 function updateChunks() {
