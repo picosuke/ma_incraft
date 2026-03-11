@@ -458,9 +458,7 @@ function switchDimension(dimIdx) {
     worldData = worldMaps[dimIdx].blocks;
     lightMap = worldMaps[dimIdx].lights;
 
-    if (worldData.size === 0) {
-        generateWorld(); 
-    }
+    generateWorld();
 
     const s = styles[currentDimension];
     scene.background = new THREE.Color(s.sky);
@@ -475,7 +473,6 @@ function switchDimension(dimIdx) {
         const s = styles[currentDimension];
         worldData = worldMaps[currentDimension].blocks;
         worldData.clear();
-        if (worldData.size === 0) {
             const range = s.range;
             scene.background = new THREE.Color(s.sky);
             scene.fog = new THREE.FogExp2(s.fog, s.fogDens / 1000);
@@ -688,7 +685,6 @@ function switchDimension(dimIdx) {
                     }
                 }
             }
-        }
         updateInstances();
         camera.position.set(0, 40, 0); 
     }
