@@ -282,7 +282,7 @@ document.querySelectorAll("#inv-tabs button").forEach(btn => {
         renderer.setSize(window.innerWidth, window.innerHeight);
         
         // 影の設定を有効化
-        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.enabled = false;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         
         document.body.appendChild(renderer.domElement);
@@ -668,7 +668,7 @@ function generateChunk(cx, cz) {
 
                 let h = Math.round(hRaw);
                 const surfaceY = h * SCALE;
-                for (let y = -8 * SCALE; y <= Math.max(surfaceY, SEA_LEVEL); y += SCALE) {
+                for (let y = -20 * SCALE; y <= Math.max(surfaceY, SEA_LEVEL); y += SCALE) {
                     let blockId = 0;
                     if (y <= surfaceY) {
                         if (stonePower > 1.5) {
