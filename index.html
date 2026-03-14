@@ -96,7 +96,7 @@
         </style>
     </head>
     <body>
-    <div id="ui">E:インベントリ | M:次元切替 | 矢印キー:視点 | WASD:移動 | /:破壊 \:設置</div>
+    <div id="ui">E:インベントリ | 矢印キー:視点 | WASD:移動 | /:破壊 \:設置</div>
     <div id="crosshair"></div>
 <div id="hotbar-wrapper">
     <div id="hp-container">
@@ -121,14 +121,6 @@
     <script>
 
     const SCALE = 4;
-
-    // ===== 無限ワールド設定 =====
-    const CHUNK_SIZE = 16;
-    const VIEW_DISTANCE = 1;
-        
-    let lastChunkX = null;
-    let lastChunkZ = null;
-        
     const PLAYER_HEIGHT = SCALE * 1.8;
     const SEA_LEVEL = -1 * SCALE;
     const MAG_LEVEL = 1 * SCALE;
@@ -225,17 +217,23 @@ let currentInvTab = "自然";
     const hotbarItems = [1, 2, 3, 4, 5, 7, 6, 8, null, null];
     const slotKeys = ['1','2','3','4','5','6','7','8','9','0'];
 
-let scene, camera, renderer,instances = {};
+// ===== チャンクシステム用の設定 =====
+const CHUNK_SIZE = 12;
+const RENDER_DISTANCE = 3; 
+let globalSeed = Math.random() * 1000;
+let globalBiomeSeed = Math.random() * 1000;
+let lastChunkX = NaN;
+let lastChunkZ = NaN;
 
-let worldMaps = [
-    { blocks: new Map(), lights: new Map(), chunks: new Set() }, // 次元0 (Overworld)
-    { blocks: new Map(), lights: new Map(), chunks: new Set() }  // 次元1 (Satumoworld)
-];
+let scene, camera, renderer,
+    worldMaps = [
+        { blocks: new Map(), lights: new Map(), loadedChunks: new Set() }, // 次元0
+        { blocks: new Map(), lights: new Map(), loadedChunks: new Set() }  // 次元1
+    ],
+    instances = {};
 
-// 現在アクティブなデータへの参照（ポインタ）
 let worldData = worldMaps[0].blocks;
 let lightMap  = worldMaps[0].lights;
-let generatedChunks = worldMaps[0].chunks; // これを追加
 
     let sunLight;
     let isPlaying = false, selectedSlot = 0, keys = {}, yVel = 0;
@@ -243,8 +241,8 @@ let generatedChunks = worldMaps[0].chunks; // これを追加
 
     // ディメンションごとの環境設定
     const styles = [
-        { name: "Overworld", sky: 0x87ceeb, fog: 0x87ceeb, fogDens: 5, range: 30, sun: 0xffffff },
-        { name: "Satumoworld", sky: 0xef8889, fog: 0xffffff, fogDens: 20, range: 30, sun: 0xffaa00 }
+        { name: "Overworld", sky: 0x87ceeb, fog: 0x87ceeb, fogDens: 10, sun: 0xffffff },
+        { name: "Satumoworld", sky: 0xef8889, fog: 0xffffff, fogDens: 30, sun: 0xffaa00 }
     ];
 
     const faceMap = [{ x: 16, y: 8, rot: 1 }, { x: 0, y: 8, rot: 3 }, { x: 8, y: 8, rot: 0 }, { x: 24, y: 8, rot: 0 }, { x: 8, y: 16, rot: 0 }, { x: 8, y: 0, rot: 2 }];
@@ -277,11 +275,14 @@ document.querySelectorAll("#inv-tabs button").forEach(btn => {
         camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 2000);
         camera.rotation.order = 'YXZ';
 
+        // プレイヤーの初期位置設定
+        camera.position.set(0, 40, 0);
+
         renderer = new THREE.WebGLRenderer({ antialias: false });
         renderer.setSize(window.innerWidth, window.innerHeight);
         
         // 影の設定を有効化
-        renderer.shadowMap.enabled = false;
+        renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         
         document.body.appendChild(renderer.domElement);
@@ -425,8 +426,8 @@ document.querySelectorAll("#inv-tabs button").forEach(btn => {
                 });
                 
                 uv.needsUpdate = true;
-                // InstancedMeshを作成（大量配置用で高速）
-                instances[id] = new THREE.InstancedMesh(geo, mat, 55000);
+                // InstancedMeshを作成（カリング用のため上限数を多めに確保）
+                instances[id] = new THREE.InstancedMesh(geo, mat, 100000);
                 instances[id].castShadow = true;
                 instances[id].receiveShadow = true;
 
@@ -438,7 +439,13 @@ document.querySelectorAll("#inv-tabs button").forEach(btn => {
                 scene.add(instances[id]);
 
                 if (++loadedCount === allPossibleIds.length) {
-                    generateWorld();
+                    // ★★★ 修正箇所：全テクスチャ読み込み完了後に環境設定とチャンク生成を開始 ★★★
+                    const s = styles[currentDimension];
+                    scene.background = new THREE.Color(s.sky);
+                    scene.fog = new THREE.FogExp2(s.fog, s.fogDens / 1000);
+                    if (sunLight) sunLight.color.setHex(s.sun);
+
+                    updateChunks();
                 }
             });
         });
@@ -450,333 +457,254 @@ document.querySelectorAll("#inv-tabs button").forEach(btn => {
     }
 
 function switchDimension(dimIdx) {
-    // 1. 前の次元のライトをシーンから削除
+    // 前の全ライトをシーンから削除（ディメンション切り替え時専用）
     worldMaps[currentDimension].lights.forEach(light => scene.remove(light));
+    worldMaps[currentDimension].lights.clear();
 
-    // 2. インデックスを更新
     currentDimension = dimIdx;
-
-    // 3. ★ データの参照を現在の次元のものに切り替える
     worldData = worldMaps[dimIdx].blocks;
     lightMap = worldMaps[dimIdx].lights;
-    generatedChunks = worldMaps[dimIdx].chunks; // ★ここが重要
 
-    // 4. ★ チャンク更新用のキャッシュをリセット
-    // これにより、updateChunks() が「新しい場所に移動した」と判断して地形を作ります
-    lastChunkX = null;
-    lastChunkZ = null;
-
-    // 5. 環境設定の反映
     const s = styles[currentDimension];
     scene.background = new THREE.Color(s.sky);
     scene.fog = new THREE.FogExp2(s.fog, s.fogDens / 1000);
     if (sunLight) sunLight.color.setHex(s.sun);
 
-    // 6. 再描画
-    updateInstances();
+    // ディメンションを切り替えたので強制的にチャンクを再計算・描画
+    lastChunkX = NaN;
+    updateChunks();
 }
 
-    function generateWorld() {
-        generatedChunks.clear();
-        const s = styles[currentDimension];
-        worldData = worldMaps[currentDimension].blocks;
-        worldData.clear();
-            const range = s.range;
-            scene.background = new THREE.Color(s.sky);
-            scene.fog = new THREE.FogExp2(s.fog, s.fogDens / 1000);
+// ===== チャンク更新・生成ロジック =====
+function updateChunks() {
+    // プレイヤーの現在チャンク座標を計算
+    const cx = Math.floor(camera.position.x / (CHUNK_SIZE * SCALE));
+    const cz = Math.floor(camera.position.z / (CHUNK_SIZE * SCALE));
 
-            // 【追加】ディメンションに合わせて太陽の色を変更
-            if(sunLight) sunLight.color.setHex(s.sun);
+    if (cx !== lastChunkX || cz !== lastChunkZ) {
+        lastChunkX = cx;
+        lastChunkZ = cz;
+        let generated = false;
 
-            worldData.clear();
-            const seed = Math.random() * 1000;
-            const biomeSeed = Math.random() * 1000;
+        const currentLoadedChunks = worldMaps[currentDimension].loadedChunks;
 
-            for(let x = -range; x <= range; x++) {
-                for(let z = -range; z <= range; z++) {
-                    const px = x * SCALE, pz = z * SCALE;
+        // RENDER_DISTANCEの範囲内にあるチャンクをチェック
+        for (let dx = -RENDER_DISTANCE; dx <= RENDER_DISTANCE; dx++) {
+            for (let dz = -RENDER_DISTANCE; dz <= RENDER_DISTANCE; dz++) {
+                const targetCx = cx + dx;
+                const targetCz = cz + dz;
+                const key = `${targetCx},${targetCz}`;
 
-                    if (currentDimension === 1) {
-
-                        let hBase = 3 + Math.sin(x * 0.05 + seed) * Math.cos(z * 0.05 + seed) * 4;
-                        hBase += (Math.sin(x * 0.15 + seed) + Math.cos(z * 0.15 + seed)) * 0.8;
-
-                        let h = Math.round(hBase);
-                        const surfaceY = h * SCALE;
-
-                        // 地層生成
-                        for (let y = -5 * SCALE; y <= Math.max(surfaceY, MAG_LEVEL); y += SCALE) {
-                            let blockId = 0;
-
-                            if (y <= surfaceY) {
-                                if (y === surfaceY) {
-                                    if (y < MAG_LEVEL - (1 * SCALE)) {
-                                        blockId = 13;
-                                    } else if (y <= MAG_LEVEL - 4 + SCALE) {
-                                        blockId = 13;
-                                    } else {
-                                        blockId = 15;
-                                    }
-                                } else {
-                                    if (y < MAG_LEVEL && y > surfaceY - (2 * SCALE)) {
-                                        blockId = 13;
-                                    } else {
-                                        blockId = 3;
-                                    }
-                                }
-                            } else if (y <= MAG_LEVEL) {
-                                blockId = 21;
-                            }
-
-                            if (blockId !== 0) worldData.set(`${px},${y},${pz}`, blockId);
-                        }
-                        
-
-                        // ===== 次元1 超高木（高さ比例・枝あり・縦葉）=====
-                        const currentSurfaceId = worldData.get(`${px},${surfaceY},${pz}`);
-                        if (
-                            currentDimension === 1 &&
-                            currentSurfaceId === 15 &&
-                            surfaceY > MAG_LEVEL &&
-                            Math.random() > 0.98
-                        ) {
-                        
-                            // ★ 高さを大きく
-                            const treeHeight = 12 + Math.floor(Math.random() * 6); // 12〜17
-                        
-                            const leafStart = Math.floor(treeHeight * 0.35);
-                            const leafEnd   = Math.floor(treeHeight * 1.15);
-                        
-                            // ===== 幹（2×2）=====
-                            for (let ty = 1; ty <= treeHeight; ty++) {
-                                for (let tx = 0; tx < 2; tx++) {
-                                    for (let tz = 0; tz < 2; tz++) {
-                                        const x = px + tx * SCALE;
-                                        const y = surfaceY + ty * SCALE;
-                                        const z = pz + tz * SCALE;
-                        
-                                        if (!worldData.has(`${x},${y},${z}`)) {
-                                            worldData.set(`${x},${y},${z}`, 16);
-                                        }
-                                    }
-                                }
-                            }
-                        
-                            // ===== 枝（高さ比例）=====
-                            const branchCount = Math.floor(treeHeight / 3);
-                        
-                            for (let i = 0; i < branchCount; i++) {
-                        
-                                const by = surfaceY + (leafStart + Math.floor(Math.random() * (treeHeight - leafStart))) * SCALE;
-                        
-                                const dirX = Math.random() < 0.5 ? -1 : 1;
-                                const dirZ = Math.random() < 0.5 ? -1 : 1;
-                                const branchLength = 2 + Math.floor(Math.random() * 3);
-                        
-                                for (let l = 1; l <= branchLength; l++) {
-                                    const x = px + dirX * l * SCALE;
-                                    const y = by + Math.floor(l / 2) * SCALE; // 少し上向き
-                                    const z = pz + dirZ * l * SCALE;
-                        
-                                    if (!worldData.has(`${x},${y},${z}`)) {
-                                        worldData.set(`${x},${y},${z}`, 16);
-                                    }
-                                }
-                            }
-                        
-                            // ===== 葉（高さ比例・縦多め）=====
-                            for (let ly = leafStart; ly <= leafEnd; ly++) {
-                        
-                                const y = surfaceY + ly * SCALE;
-                        
-                                // 高さに比例して広がる
-                                const t = ly / leafEnd;
-                                const radius = Math.floor(1 + t * 5); // 最大5
-                        
-                                for (let lx = -radius; lx <= radius; lx++) {
-                                    for (let lz = -radius; lz <= radius; lz++) {
-                        
-                                        const dist = Math.abs(lx) + Math.abs(lz);
-                        
-                                        // 上ほど密度UP
-                                        const density =
-                                            dist === 0 ? 0.95 :
-                                            dist === 1 ? 0.85 :
-                                            dist === 2 ? 0.6 :
-                                            dist === 3 ? 0.35 : 0.2;
-                        
-                                        if (Math.random() > density) continue;
-                        
-                                        // ランダム欠け
-                                        if (Math.random() < 0.1) continue;
-                        
-                                        const x = px + lx * SCALE;
-                                        const z = pz + lz * SCALE;
-                        
-                                        worldData.set(`${x},${y},${z}`, 12);
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-
-                        let hBase = Math.sin(x * 0.05 + seed) * Math.cos(z * 0.05 + seed) * 3;
-                        let bMix = (Math.sin(x * 0.1 + biomeSeed) + Math.cos(z * 0.1 + biomeSeed)   ) / 2;
-                        let mountainSizeMod = (Math.sin(x * 0.03 + seed) + 1) * 0.5;
-                        let hRaw = hBase;
-                        let stonePower = 0;
-                        if (bMix > 0.5) {
-                            let t = (bMix - 0.5) / 0.3;
-                            let curve = Math.pow(Math.max(0, t), 1.5);
-                            let maxHeight = 4 + (mountainSizeMod * 2);
-
-                            // --- 修正箇所: 複数の波を組み合わせて複雑な形にする ---
-                            // biomeSeedを混ぜることで、世界ごとに「ゴツゴツ感」のパターンが変わります
-                            let rugged = (
-                                Math.sin(x * 0.4 + seed) * 1.2 + 
-                                Math.cos(z * 0.35 + biomeSeed) * 1.2 + // z軸の動きと別シードを混ぜる
-                                Math.sin((x + z) * 0.7 + seed * 0.5) * 0.6 // 斜めの細かいノイズ
-                            );
-                            // ----------------------------------------------
-
-                            hRaw += (curve * maxHeight) + (curve * rugged);
-                            stonePower = t;
-                        } else if (bMix < -0.5) {
-                            let t = Math.min(1, (Math.abs(bMix) - 0.5) / 0.2);
-                            hRaw *= (1 - t * 0.8);
-                        }
-
-                        let h = Math.round(hRaw);
-                        const surfaceY = h * SCALE;
-                        for (let y = -8 * SCALE; y <= surfaceY; y += SCALE) {
-
-                            let blockId = 0;
-
-                            if (y < surfaceY - 2 * SCALE) blockId = 3;
-                            else if (y < surfaceY) blockId = 2;
-                            else blockId = (y <= SEA_LEVEL) ? 7 : 1;
-
-                            if (blockId !== 0) worldData.set(`${px},${y},${pz}`, blockId);
-                        }
-
-                        for (let y = surfaceY + SCALE; y <= SEA_LEVEL; y += SCALE) {
-                            worldData.set(`${px},${y},${pz}`, 6);
-                        }
-
-                        // --- 現世の木生成 (コンパクト版) ---
-                        const currentSurfaceId = worldData.get(`${px},${surfaceY},${pz}`);
-                        if (currentSurfaceId === 1 && surfaceY > SEA_LEVEL && Math.random() > 0.98) {
-                            const trunkHeight = 3 + Math.floor(Math.random() * 2); // 3〜4マスの高さに抑える
-
-                            // 原木(ID:4)
-                            for (let ty = 1; ty <= trunkHeight; ty++) {
-                                worldData.set(`${px},${surfaceY + ty * SCALE},${pz}`, 4);
-                            }
-
-                            // 葉っぱ(ID:5) - 範囲を -1〜1 に縮小
-                            for (let ly = -1; ly <= 1; ly++) {
-                                for (let lx = -1; lx <= 1; lx++) {
-                                    for (let lz = -1; lz <= 1; lz++) {
-                                        // 最先端（ly=1）は真上だけに限定してシュッとさせる
-                                        if (ly === 1 && (lx !== 0 || lz !== 0)) continue;
-
-                                        const leafPos = `${px + lx * SCALE},${surfaceY +  (trunkHeight + ly) * SCALE},${pz + lz * SCALE}`;
-
-                                        // 原木がない場所だけに葉っぱを置く
-                                        if (!worldData.has(leafPos)) {
-                                            worldData.set(leafPos, 5);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                if (!currentLoadedChunks.has(key)) {
+                    generateChunk(targetCx, targetCz);
+                    currentLoadedChunks.add(key);
+                    generated = true;
                 }
             }
-        updateInstances();
-        camera.position.set(0, 40, 0); 
-    }
+        }
 
+        // ひとつでもチャンクが新しく生成されたか、チャンク移動があった場合は描画更新
+        updateInstances();
+    }
+}
 
 function generateChunk(cx, cz) {
-    const chunkKey = `${cx},${cz}`;
-    if (generatedChunks.has(chunkKey)) return false; // 生成済みならスキップ
-    generatedChunks.add(chunkKey);
-
+    const s = styles[currentDimension];
     const startX = cx * CHUNK_SIZE;
+    const endX = startX + CHUNK_SIZE - 1;
     const startZ = cz * CHUNK_SIZE;
+    const endZ = startZ + CHUNK_SIZE - 1;
 
-    for (let x = 0; x < CHUNK_SIZE; x++) {
-        for (let z = 0; z < CHUNK_SIZE; z++) {
-            const wx = (startX + x);
-            const wz = (startZ + z);
-            const px = wx * SCALE;
-            const pz = wz * SCALE;
+    for (let x = startX; x <= endX; x++) {
+        for (let z = startZ; z <= endZ; z++) {
+            const px = x * SCALE, pz = z * SCALE;
 
-            if (currentDimension === 0) {
-                // --- 次元0: Overworld 生成 ---
-                const n = pseudoNoise(wx, wz);
-                const h = Math.round(n * 5);
+            if (currentDimension === 1) {
+                let hBase = 3 + Math.sin(x * 0.05 + globalSeed) * Math.cos(z * 0.05 + globalSeed) * 4;
+                hBase += (Math.sin(x * 0.15 + globalSeed) + Math.cos(z * 0.15 + globalSeed)) * 0.8;
+
+                let h = Math.round(hBase);
                 const surfaceY = h * SCALE;
 
-                for (let y = -8 * SCALE; y <= Math.max(surfaceY, SEA_LEVEL); y += SCALE) {
-                    let bid = 0;
+                // 地層生成
+                for (let y = -5 * SCALE; y <= Math.max(surfaceY, MAG_LEVEL); y += SCALE) {
+                    let blockId = 0;
+
                     if (y <= surfaceY) {
-                        if (y < surfaceY - 2 * SCALE) bid = 3; // 石
-                        else if (y < surfaceY) bid = 2;        // 土
-                        else bid = (y <= SEA_LEVEL) ? 7 : 1;   // 砂 or 草
-                    } else if (y <= SEA_LEVEL) {
-                        bid = 6; // 水
+                        if (y === surfaceY) {
+                            if (y < MAG_LEVEL - (1 * SCALE)) {
+                                blockId = 13;
+                            } else if (y <= MAG_LEVEL - 4 + SCALE) {
+                                blockId = 13;
+                            } else {
+                                blockId = 15;
+                            }
+                        } else {
+                            if (y < MAG_LEVEL && y > surfaceY - (2 * SCALE)) {
+                                blockId = 13;
+                            } else {
+                                blockId = 3;
+                            }
+                        }
+                    } else if (y <= MAG_LEVEL) {
+                        blockId = 21;
                     }
-                    if (bid !== 0) worldData.set(`${px},${y},${pz}`, bid);
+
+                    if (blockId !== 0) worldData.set(`${px},${y},${pz}`, blockId);
+                }
+                
+                // ===== 次元1 超高木（高さ比例・枝あり・縦葉）=====
+                const currentSurfaceId = worldData.get(`${px},${surfaceY},${pz}`);
+                if (
+                    currentDimension === 1 &&
+                    currentSurfaceId === 15 &&
+                    surfaceY > MAG_LEVEL &&
+                    Math.random() > 0.98
+                ) {
+                
+                    // ★ 高さを大きく
+                    const treeHeight = 12 + Math.floor(Math.random() * 6); // 12〜17
+                
+                    const leafStart = Math.floor(treeHeight * 0.35);
+                    const leafEnd   = Math.floor(treeHeight * 1.15);
+                
+                    // ===== 幹（2×2）=====
+                    for (let ty = 1; ty <= treeHeight; ty++) {
+                        for (let tx = 0; tx < 2; tx++) {
+                            for (let tz = 0; tz < 2; tz++) {
+                                const bx = px + tx * SCALE;
+                                const by = surfaceY + ty * SCALE;
+                                const bz = pz + tz * SCALE;
+                
+                                if (!worldData.has(`${bx},${by},${bz}`)) {
+                                    worldData.set(`${bx},${by},${bz}`, 16);
+                                }
+                            }
+                        }
+                    }
+                
+                    // ===== 枝（高さ比例）=====
+                    const branchCount = Math.floor(treeHeight / 3);
+                
+                    for (let i = 0; i < branchCount; i++) {
+                
+                        const by = surfaceY + (leafStart + Math.floor(Math.random() * (treeHeight - leafStart))) * SCALE;
+                
+                        const dirX = Math.random() < 0.5 ? -1 : 1;
+                        const dirZ = Math.random() < 0.5 ? -1 : 1;
+                        const branchLength = 2 + Math.floor(Math.random() * 3);
+                
+                        for (let l = 1; l <= branchLength; l++) {
+                            const bx = px + dirX * l * SCALE;
+                            const by_branch = by + Math.floor(l / 2) * SCALE; // 少し上向き
+                            const bz = pz + dirZ * l * SCALE;
+                
+                            if (!worldData.has(`${bx},${by_branch},${bz}`)) {
+                                worldData.set(`${bx},${by_branch},${bz}`, 16);
+                            }
+                        }
+                    }
+                
+                    // ===== 葉（高さ比例・縦多め）=====
+                    for (let ly = leafStart; ly <= leafEnd; ly++) {
+                
+                        const by = surfaceY + ly * SCALE;
+                
+                        // 高さに比例して広がる
+                        const t = ly / leafEnd;
+                        const radius = Math.floor(1 + t * 5); // 最大5
+                
+                        for (let lx = -radius; lx <= radius; lx++) {
+                            for (let lz = -radius; lz <= radius; lz++) {
+                
+                                const dist = Math.abs(lx) + Math.abs(lz);
+                
+                                // 上ほど密度UP
+                                const density =
+                                    dist === 0 ? 0.95 :
+                                    dist === 1 ? 0.85 :
+                                    dist === 2 ? 0.6 :
+                                    dist === 3 ? 0.35 : 0.2;
+                
+                                if (Math.random() > density) continue;
+                
+                                // ランダム欠け
+                                if (Math.random() < 0.1) continue;
+                
+                                const bx = px + lx * SCALE;
+                                const bz = pz + lz * SCALE;
+                
+                                worldData.set(`${bx},${by},${bz}`, 12);
+                            }
+                        }
+                    }
+                }
+            } else {
+
+                let hBase = Math.sin(x * 0.05 + globalSeed) * Math.cos(z * 0.05 + globalSeed) * 3;
+                let bMix = (Math.sin(x * 0.1 + globalBiomeSeed) + Math.cos(z * 0.1 + globalBiomeSeed)   ) / 2;
+                let mountainSizeMod = (Math.sin(x * 0.03 + globalSeed) + 1) * 0.5;
+                let hRaw = hBase;
+                let stonePower = 0;
+                if (bMix > 0.5) {
+                    let t = (bMix - 0.5) / 0.3;
+                    let curve = Math.pow(Math.max(0, t), 1.5);
+                    let maxHeight = 4 + (mountainSizeMod * 2);
+
+                    // --- 修正箇所: 複数の波を組み合わせて複雑な形にする ---
+                    let rugged = (
+                        Math.sin(x * 0.4 + globalSeed) * 1.2 + 
+                        Math.cos(z * 0.35 + globalBiomeSeed) * 1.2 + // z軸の動きと別シードを混ぜる
+                        Math.sin((x + z) * 0.7 + globalSeed * 0.5) * 0.6 // 斜めの細かいノイズ
+                    );
+                    // ----------------------------------------------
+
+                    hRaw += (curve * maxHeight) + (curve * rugged);
+                    stonePower = t;
+                } else if (bMix < -0.5) {
+                    let t = Math.min(1, (Math.abs(bMix) - 0.5) / 0.2);
+                    hRaw *= (1 - t * 0.8);
                 }
 
-                // 木の生成
-                if (worldData.get(`${px},${surfaceY},${pz}`) === 1 && surfaceY > SEA_LEVEL && Math.random() > 0.98) {
-                    const th = 3 + Math.floor(Math.random() * 2);
-                    for (let ty = 1; ty <= th; ty++) worldData.set(`${px},${surfaceY + ty * SCALE},${pz}`, 4);
+                let h = Math.round(hRaw);
+                const surfaceY = h * SCALE;
+                for (let y = -8 * SCALE; y <= Math.max(surfaceY, SEA_LEVEL); y += SCALE) {
+                    let blockId = 0;
+                    if (y <= surfaceY) {
+                        if (stonePower > 1.5) {
+                            blockId = 10;
+                        } else if (stonePower > 0.15) {
+                            blockId = 3;
+                        }
+                        else if (y < surfaceY - 2 * SCALE) blockId = 3;
+                        else if (y < surfaceY) blockId = 2;
+                        else blockId = (y <= SEA_LEVEL) ? 7 : 1;
+                    } else if (y <= SEA_LEVEL) blockId = 6;
+                    if (blockId !== 0) worldData.set(`${px},${y},${pz}`, blockId);
+                }
+
+                // --- 現世の木生成 (コンパクト版) ---
+                const currentSurfaceId = worldData.get(`${px},${surfaceY},${pz}`);
+                if (currentSurfaceId === 1 && surfaceY > SEA_LEVEL && Math.random() > 0.98) {
+                    const trunkHeight = 3 + Math.floor(Math.random() * 2); // 3〜4マスの高さに抑える
+
+                    // 原木(ID:4)
+                    for (let ty = 1; ty <= trunkHeight; ty++) {
+                        worldData.set(`${px},${surfaceY + ty * SCALE},${pz}`, 4);
+                    }
+
+                    // 葉っぱ(ID:5) - 範囲を -1〜1 に縮小
                     for (let ly = -1; ly <= 1; ly++) {
                         for (let lx = -1; lx <= 1; lx++) {
                             for (let lz = -1; lz <= 1; lz++) {
-                                const lpos = `${px + lx * SCALE},${surfaceY + (th + ly) * SCALE},${pz + lz * SCALE}`;
-                                if (!worldData.has(lpos)) worldData.set(lpos, 5);
-                            }
-                        }
-                    }
-                }
+                                // 最先端（ly=1）は真上だけに限定してシュッとさせる
+                                if (ly === 1 && (lx !== 0 || lz !== 0)) continue;
 
-            } else {
-                // --- 次元1: Satumoworld 生成 ---
-                const n = pseudoNoise(wx + 500, wz + 500); // シードずらし
-                const h = Math.round(n * 8 + 4);
-                const surfaceY = h * SCALE;
+                                const leafPos = `${px + lx * SCALE},${surfaceY +  (trunkHeight + ly) * SCALE},${pz + lz * SCALE}`;
 
-                for (let y = -5 * SCALE; y <= Math.max(surfaceY, MAG_LEVEL); y += SCALE) {
-                    let bid = 0;
-                    if (y <= surfaceY) {
-                        if (y === surfaceY) {
-                            bid = (y < MAG_LEVEL) ? 13 : 15; // 赤土 or 赤草
-                        } else {
-                            bid = (y > surfaceY - 2 * SCALE) ? 13 : 3;
-                        }
-                    } else if (y <= MAG_LEVEL) {
-                        bid = 21; // マグマ
-                    }
-                    if (bid !== 0) worldData.set(`${px},${y},${pz}`, bid);
-                }
-
-                // 次元1の巨木生成
-                if (worldData.get(`${px},${surfaceY},${pz}`) === 15 && Math.random() > 0.985) {
-                    const th = 10 + Math.floor(Math.random() * 5);
-                    for (let ty = 1; ty <= th; ty++) {
-                        worldData.set(`${px},${surfaceY + ty * SCALE},${pz}`, 16);
-                        if (ty > th * 0.4) { // 上の方に葉っぱ
-                            for(let lx=-2; lx<=2; lx++) {
-                                for(let lz=-2; lz<=2; lz++) {
-                                    if(Math.random() > 0.3) {
-                                        const lpos = `${px+lx*SCALE},${surfaceY+ty*SCALE},${pz+lz*SCALE}`;
-                                        if(!worldData.has(lpos)) worldData.set(lpos, 12);
-                                    }
+                                // 原木がない場所だけに葉っぱを置く
+                                if (!worldData.has(leafPos)) {
+                                    worldData.set(leafPos, 5);
                                 }
                             }
                         }
@@ -785,39 +713,8 @@ function generateChunk(cx, cz) {
             }
         }
     }
-    return true;
 }
 
-
-
-function updateChunks() {
-
-    const px = camera.position.x;
-    const pz = camera.position.z;
-
-    const cx = Math.floor(px / (CHUNK_SIZE * SCALE));
-    const cz = Math.floor(pz / (CHUNK_SIZE * SCALE));
-
-    // 同じチャンクなら何もしない
-    if (cx === lastChunkX && cz === lastChunkZ) return;
-
-    lastChunkX = cx;
-    lastChunkZ = cz;
-
-    let generated = false;
-
-    for (let x = -VIEW_DISTANCE; x <= VIEW_DISTANCE; x++) {
-        for (let z = -VIEW_DISTANCE; z <= VIEW_DISTANCE; z++) {
-            const before = generatedChunks.size;
-            generateChunk(cx + x, cz + z);
-            if (generatedChunks.size !== before) generated = true;
-        }
-    }
-
-    if (generated) updateInstances();
-}
-        
-        
 function checkCollision(px, py, pz) {
     const playerBottom = py - 0.5 - PLAYER_HEIGHT / 2;
     const playerTop    = py - 0.5 + PLAYER_HEIGHT / 2;
@@ -877,7 +774,6 @@ function checkCollision(px, py, pz) {
     function animate() {
         requestAnimationFrame(animate);
         if (isPlaying && !isInvOpen) {
-updateChunks();
 
 // animate() 内の該当部分を置き換え
 let dir = new THREE.Vector3(); 
@@ -1015,15 +911,20 @@ if (yVel <= 0) {
                 scene.fog.density = s.fogDens / 1000;
             }
 
+            // ===== チャンクの動的ロード確認 =====
+            updateChunks();
+
             if (camera.position.y < -420) { 
                 let nextDim = (currentDimension + 1) % styles.length;
+                
+                // 1. まずプレイヤーを上空（例えばy=40）へ移動し、速度をリセット
+                camera.position.set(0, 40, 0); 
+                yVel = 0; 
+                
+                // 2. ディメンションを切り替え（内部でupdateChunksが呼ばれ(0,0)の地形が生成される）
                 switchDimension(nextDim); 
 
-                // 1. まずプレイヤーを上空（例えばy=60）へ移動
-                camera.position.y = 40; 
-                yVel = 0; // 落下速度をリセット（これ重要！）
-
-                // 2. テレポート先の座標(0, 0)付近で、地面がある場所を探す
+                // 3. テレポート先の座標(0, 0)付近で、地面がある場所を探す
                 // 地面が見つからなければ、安全のために高い位置からスタート
                 for (let checkY = 40; checkY > -40; checkY -= SCALE) {
                     const bid = worldData.get(`${0},${snap(checkY)},${0}`);
@@ -1061,16 +962,24 @@ function updateInstances() {
     const idCounters = {};
     Object.keys(instances).forEach(id => idCounters[id] = 0);
 
+    const pX = camera.position.x;
+    const pZ = camera.position.z;
+    const drawLimit = RENDER_DISTANCE * CHUNK_SIZE * SCALE + (2 * SCALE); // 描画距離の制限
+
     worldData.forEach((id, pos) => {
         if (id === 6 || id === 21) return;
 
-        const mesh = instances[id];
-        if (!mesh) {
-            console.warn(`インスタンスが見つからない: ID=${id}`);
+        const [x, y, z] = pos.split(',').map(Number);
+
+        // 描画範囲外のブロックは除外して軽くする
+        if (Math.abs(x - pX) > drawLimit || Math.abs(z - pZ) > drawLimit) {
             return;
         }
 
-        const [x, y, z] = pos.split(',').map(Number);
+        const mesh = instances[id];
+        if (!mesh) {
+            return;
+        }
 
         dummy.position.set(x, y, z);
         dummy.updateMatrix();
@@ -1088,18 +997,22 @@ function updateInstances() {
         }
     });
 
-    console.log(`updateInstances完了: 総ブロック ${worldData.size}個`);
+    console.log(`updateInstances完了: 描画範囲内のブロックを更新`);
 
     updateLiquidMesh();
     rebuildLights();
 }
 
     function rebuildLights() {
-        // ★ 修正：全ディメンションのライトをシーンからクリア（重複防止）
+        // 全ディメンションのライトをシーンからクリア
         worldMaps.forEach(dim => {
             dim.lights.forEach(light => scene.remove(light));
             dim.lights.clear();
         });
+
+        const pX = camera.position.x;
+        const pZ = camera.position.z;
+        const drawLimit = RENDER_DISTANCE * CHUNK_SIZE * SCALE + (2 * SCALE);
 
         // 現在のディメンションだけ再構築
         worldData.forEach((id, pos) => {
@@ -1107,13 +1020,19 @@ function updateInstances() {
             if (!def || !def.light) return;
 
             const [x, y, z] = pos.split(',').map(Number);
+            
+            // 描画範囲外のライトは除外
+            if (Math.abs(x - pX) > drawLimit || Math.abs(z - pZ) > drawLimit) {
+                return;
+            }
+
             const light = new THREE.PointLight(
                 def.light.color,
                 def.light.intensity,
                 def.light.distance
             );
             light.position.set(x, y + SCALE * 0.3, z);
-            light.castShadow = false;  // ★ 明示的に影を落とさない
+            light.castShadow = false;  // 明示的に影を落とさない
 
             scene.add(light);
             lightMap.set(pos, light);
@@ -1129,6 +1048,10 @@ function updateLiquidMesh() {
 
     // 処理対象：葉っぱ(5,12) + 水(6) + マグマ(21)
     const transparentIds = [5, 6, 12, 21];
+
+    const pX = camera.position.x;
+    const pZ = camera.position.z;
+    const drawLimit = RENDER_DISTANCE * CHUNK_SIZE * SCALE + (2 * SCALE);
 
     transparentIds.forEach(blockId => {
         const inst = instances[blockId];
@@ -1151,6 +1074,11 @@ function updateLiquidMesh() {
 
             const [px, py, pz] = key.split(',').map(Number);
 
+            // 描画範囲外は除外
+            if (Math.abs(px - pX) > drawLimit || Math.abs(pz - pZ) > drawLimit) {
+                return;
+            }
+
             FACE_DATA.forEach(face => {
                 const nx = px + face.dir[0] * SCALE;
                 const ny = py + face.dir[1] * SCALE;
@@ -1158,7 +1086,6 @@ function updateLiquidMesh() {
 
                 const neighbor = worldData.get(`${nx},${ny},${nz}`);
 
-                // ★★★ ここだけ変更！ ★★★
                 // 同じ種類のブロック同士（または存在するブロック）なら面を消す
                 // → 空気（undefined）以外は基本的に消す（触れている面は消える）
                 if (neighbor !== undefined) {
@@ -1197,7 +1124,6 @@ function updateLiquidMesh() {
         });
 
         if (positions.length === 0) {
-            console.log(`メッシュ空: blockId=${blockId}`);
             return;
         }
 
@@ -1220,14 +1146,17 @@ function updateLiquidMesh() {
     function saveToFile() {
         const saveData = {
             maps: worldMaps.map(dim => ({
-                blocks: Array.from(dim.blocks.entries())
+                blocks: Array.from(dim.blocks.entries()),
+                loadedChunks: Array.from(dim.loadedChunks) // Setを配列化して保存
             })),
             pos: {
                 x: camera.position.x,
                 y: camera.position.y,
                 z: camera.position.z
             },
-            dim: currentDimension
+            dim: currentDimension,
+            globalSeed: globalSeed,
+            globalBiomeSeed: globalBiomeSeed
         };
     
         const blob = new Blob([JSON.stringify(saveData)], { type: 'application/json' });
@@ -1254,14 +1183,18 @@ function updateLiquidMesh() {
 
                 worldMaps = data.maps.map(dim => ({
                     blocks: new Map(dim.blocks),
-                    lights: new Map()
+                    lights: new Map(),
+                    loadedChunks: new Set(dim.loadedChunks) // 配列からSetに復元
                 }));
 
                 camera.position.set(data.pos.x, data.pos.y, data.pos.z);
                 currentDimension = data.dim;
+                
+                // シード値の復元（あれば）
+                if (data.globalSeed) globalSeed = data.globalSeed;
+                if (data.globalBiomeSeed) globalBiomeSeed = data.globalBiomeSeed;
 
                 switchDimension(currentDimension);
-                updateInstances();
 
                 alert("ワールドを読み込みました！");
             };
@@ -1430,7 +1363,7 @@ function updateLiquidMesh() {
         updateHotbar();
     }
 
-    // 新しく作る関数：アイテム使用処理（共通化） ← これを以下のように修正
+    // アイテム使用処理
     function performItemUse(id, def) {
         console.log("アイテム使用:", def.name);
 
@@ -1439,14 +1372,11 @@ function updateLiquidMesh() {
             updateHPBar();
         }
 
-        // ★ 修正：消費フラグで分岐（デフォルトは消費する）
-        // ITEM_DEFS に consumable: false を追加したアイテムだけ消費しない
+        // 消費フラグで分岐
         if (def.consumable !== false && inventoryCounts[id] !== undefined) {
             inventoryCounts[id] = Math.max(0, inventoryCounts[id] - 1);
             updateHotbar();
         }
-
-        // 必要ならサウンドやパーティクルなど追加可能
     }
 
     function toggleInventory() {
@@ -1458,7 +1388,7 @@ function updateLiquidMesh() {
             isPlaying = false;
             document.exitPointerLock();
 
-            // ★ 追加：タブ初期化
+            // タブ初期化
             setInventoryTab(currentInvTab);
 
         } else {
@@ -1505,7 +1435,7 @@ function updateLiquidMesh() {
 
             const def = ITEM_DEFS[String(id)];
 
-            // ★ ここを修正：ハーフブロックなら baseId を使う
+            // ハーフブロックなら baseId を使う
             let textureId = id;
             if (def?.isHalf && def.baseId !== undefined) {
                 textureId = def.baseId;
@@ -1548,58 +1478,60 @@ function updateLiquidMesh() {
         });
     }
 
-function updateHotbar() {
-    const hotbar = document.getElementById('hotbar');
-    hotbar.innerHTML = '';
+    function updateHotbar() {
+        const hotbar = document.getElementById('hotbar');
+        hotbar.innerHTML = '';
 
-    hotbarItems.forEach((id, index) => {
-        const slot = document.createElement('div');
-        slot.className = 'slot' + (selectedSlot === index ? ' active' : '');
-        slot.dataset.key = slotKeys[index];
+        hotbarItems.forEach((id, index) => {
+            const slot = document.createElement('div');
+            slot.className = 'slot' + (selectedSlot === index ? ' active' : '');
+            slot.dataset.key = slotKeys[index];
 
-        if (id !== null) {
-            const def = ITEM_DEFS[String(id)];
+            if (id !== null) {
+                const def = ITEM_DEFS[String(id)];
 
-            let textureId = id;
-            if (def?.isHalf && def.baseId !== undefined) {
-                textureId = def.baseId;
-            }
-
-            slot.style.backgroundImage = `url('texture/${textureId}/${textureId}.png')`;
-
-            if (def && def.type === "block") {
-                slot.style.backgroundSize = "400%";
-                if (textureId === 6 || textureId === 21) {
-                    slot.style.backgroundPosition = "-44px -44px";
-                } else {
-                    slot.style.backgroundPosition = "-44px -88px";
+                // ハーフブロックなら baseId を使う
+                let textureId = id;
+                if (def?.isHalf && def.baseId !== undefined) {
+                    textureId = def.baseId;
                 }
-            } else {
-                slot.style.backgroundSize = "contain";
-                slot.style.backgroundPosition = "center";
+
+                slot.style.backgroundImage = `url('texture/${textureId}/${textureId}.png')`;
+
+                if (def && def.type === "block") {
+                    slot.style.backgroundSize = "400%";
+                    if ( textureId === 6 || textureId === 21) {
+                        slot.style.backgroundPosition = "-44px -44px";
+                    } else {
+                        slot.style.backgroundPosition = "-44px -88px";
+                    }
+                } else {
+                    slot.style.backgroundSize = "contain";
+                    slot.style.backgroundPosition = "center";
+                }
+
+                slot.style.backgroundRepeat = "no-repeat";
+
+                // 所持数表示
+                const count = getItemCount(id);
+                if (count > 0) {
+                    const span = document.createElement('span');
+                    span.textContent = count;
+                    span.style.position = 'absolute';
+                    span.style.bottom = '2px';
+                    span.style.right = '4px';
+                    span.style.fontSize = '10px';
+                    span.style.color = 'white';
+                    span.style.textShadow = '0 0 2px black';
+                    slot.appendChild(span);
+                }
             }
 
-            slot.style.backgroundRepeat = "no-repeat";
-
-            const count = getItemCount(id);
-            if (count !== undefined) {
-                const counter = document.createElement("div");
-                counter.style.position = "absolute";
-                counter.style.bottom = "2px";
-                counter.style.right = "2px";
-                counter.style.fontSize = "10px";
-                counter.style.color = "white";
-                counter.style.textShadow = "0 0 2px black";
-                counter.innerText = count;
-                slot.appendChild(counter);
-            }
-        }
-
-        hotbar.appendChild(slot);
-    });
-}
+            hotbar.appendChild(slot);
+        });
+    }
 
     init();
     </script>
     </body>
-    </html>
+</html>
