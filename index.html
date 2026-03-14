@@ -939,6 +939,7 @@ if (yVel <= 0) {
     }
 
     // ... インスタンス描画・操作系（すべて維持） ...
+
 function updateInstances() {
     const dummy = new THREE.Object3D();
 
@@ -947,14 +948,13 @@ function updateInstances() {
         if (inst) {
             inst.count = 0;
             inst.instanceMatrix.needsUpdate = true;
-            inst.frustumCulled = false;           // これでカリング無効化（超重要！）
+            inst.frustumCulled = false;           
             
-            // boundingSphereを手動で巨大に（computeBoundingSphereの代わり）
             if (!inst.boundingSphere) {
                 inst.boundingSphere = new THREE.Sphere();
             }
             inst.boundingSphere.center.set(0, 0, 0);
-            inst.boundingSphere.radius = 30000;   // めちゃくちゃ大きくしてカリングを回避
+            inst.boundingSphere.radius = 30000;   
         }
     });
 
@@ -964,9 +964,22 @@ function updateInstances() {
 
     const pX = camera.position.x;
     const pZ = camera.position.z;
-    const drawLimit = RENDER_DISTANCE * CHUNK_SIZE * SCALE + (2 * SCALE); // 描画距離の制限
+    const drawLimit = RENDER_DISTANCE * CHUNK_SIZE * SCALE + (2 * SCALE);
+
+    // ★ 追加: 隣のブロックが「不透明なフルブロック」かどうか判定する関数
+    function isOpaqueFullBlock(id) {
+        if (id === undefined) return false; // 何もない（空気）
+        const def = ITEM_DEFS[String(id)];
+        if (!def || def.type !== "block" || def.isHalf) return false; // ブロック以外、またはハーフブロック
+        
+        // 葉っぱ、水、マグマなどの透明・半透明・隙間のあるブロックは透けるとする
+        if (id === 5 || id === 6 || id === 12 || id === 21) return false;
+        
+        return true; // それ以外（土、石、木など）は不透明
+    }
 
     worldData.forEach((id, pos) => {
+        // 水(6)とマグマ(21)は updateLiquidMesh で別途処理されるため無視
         if (id === 6 || id === 21) return;
 
         const [x, y, z] = pos.split(',').map(Number);
@@ -974,6 +987,28 @@ function updateInstances() {
         // 描画範囲外のブロックは除外して軽くする
         if (Math.abs(x - pX) > drawLimit || Math.abs(z - pZ) > drawLimit) {
             return;
+        }
+
+        // ★ 追加: 隠面消去（ブロックカリング）
+        // 上下前後左右の6方向のブロックIDを取得
+        const xPlus  = worldData.get(`${x + SCALE},${y},${z}`);
+        const xMinus = worldData.get(`${x - SCALE},${y},${z}`);
+        const yPlus  = worldData.get(`${x},${y + SCALE},${z}`);
+        const yMinus = worldData.get(`${x},${y - SCALE},${z}`);
+        const zPlus  = worldData.get(`${x},${y},${z + SCALE}`);
+        const zMinus = worldData.get(`${x},${y},${z - SCALE}`);
+
+        // 6方向すべてが「不透明なフルブロック」で囲まれている場合、
+        // プレイヤーからは絶対に見えないためインスタンスへの登録をスキップする
+        if (
+            isOpaqueFullBlock(xPlus) &&
+            isOpaqueFullBlock(xMinus) &&
+            isOpaqueFullBlock(yPlus) &&
+            isOpaqueFullBlock(yMinus) &&
+            isOpaqueFullBlock(zPlus) &&
+            isOpaqueFullBlock(zMinus)
+        ) {
+            return; 
         }
 
         const mesh = instances[id];
@@ -1003,6 +1038,7 @@ function updateInstances() {
     rebuildLights();
 }
 
+        
     function rebuildLights() {
         // 全ディメンションのライトをシーンからクリア
         worldMaps.forEach(dim => {
